@@ -5,7 +5,7 @@ Run from the backend folder:   python -m scripts.check_keys
 It only prints "works" or the problem. It never prints your keys.
 Test values are public and safe: Google's DNS IP (8.8.8.8) and Log4Shell (CVE-2021-44228).
 """
-import httpx
+import httpx2
 
 from app.config import get_settings
 
@@ -117,7 +117,7 @@ CHECKS = [
 
 def main():
     passed = 0
-    with httpx.Client(timeout=TIMEOUT, headers={"User-Agent": "ThreatLens/0.1"}) as client:
+    with httpx2.Client(timeout=TIMEOUT, headers={"User-Agent": "ThreatLens/0.1"}) as client:
         for name, check, key in CHECKS:
             if key is not None and not key:
                 print(f"[ MISSING ] {name}: add its key to backend/.env")
@@ -125,7 +125,7 @@ def main():
             try:
                 print(f"[  WORKS  ] {name}: {check(client)}")
                 passed += 1
-            except httpx.HTTPStatusError as exc:
+            except httpx2.HTTPStatusError as exc:
                 code = exc.response.status_code
                 if key is None and code == 403:
                     hint = "request blocked, check your internet or firewall"

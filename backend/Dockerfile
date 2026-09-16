@@ -1,5 +1,5 @@
 # Small official Python image
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # Print logs immediately and don't write .pyc files
 ENV PYTHONUNBUFFERED=1 \
