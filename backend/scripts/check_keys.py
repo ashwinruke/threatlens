@@ -87,7 +87,7 @@ def gemini(client):
     )
     r.raise_for_status()
     names = [m["name"].removeprefix("models/") for m in r.json().get("models", [])]
-    flash = [n for n in names if "flash" in n][:6]
+    flash = [n for n in names if "flash" in n]
     return "key works. Flash models: " + ", ".join(flash)
 
 
@@ -97,7 +97,7 @@ def groq(client):
         headers={"Authorization": f"Bearer {settings.groq_api_key}"},
     )
     r.raise_for_status()
-    names = sorted(m["id"] for m in r.json().get("data", []))[:6]
+    names = sorted(m["id"] for m in r.json().get("data", []))
     return "key works. Some models: " + ", ".join(names)
 
 
