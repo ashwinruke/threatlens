@@ -31,3 +31,10 @@ CREATE TABLE IF NOT EXISTS source_cache (
     fetched_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (source, indicator_type, indicator_value)
 );
+
+-- AI reports, reused when the exact same evidence is explained again (saves free AI quota).
+CREATE TABLE IF NOT EXISTS ai_report_cache (
+    evidence_hash   TEXT PRIMARY KEY,
+    report          JSONB NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);

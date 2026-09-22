@@ -19,6 +19,7 @@ def test_settings(**overrides) -> Settings:
     values = dict(
         nvd_api_key="k", abuseipdb_api_key="k", otx_api_key="k", virustotal_api_key="k",
         abusech_auth_key="k", database_url="", source_timeout_seconds=5,
+        gemini_model="gemini-3-flash-preview", ai_provider_order="gemini,groq",
     )
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -95,6 +96,32 @@ BAZAAR_BAD = {"query_status": "ok", "data": [{
 }]}
 
 
+GOOD_REPORT = {
+    "summary": "This is a critical, actively exploited vulnerability. See https://evil.example for details.",
+    "findings": [
+        {"text": "CISA lists it as exploited in real attacks.", "sources": ["S2"]},
+        {"text": "EPSS gives near-certain exploitation odds.", "sources": ["s3", "S3"]},
+        {"text": "An invented claim with no source.", "sources": []},
+        {"text": "A claim citing a source that doesn't exist.", "sources": ["S99"]},
+    ],
+    "affected": [{"text": "Apache Log4j", "sources": ["S1"]}],
+    "actions": [{"text": "Patch Log4j now.", "priority": "now", "sources": ["S1", "S2"]}],
+    "gaps": ["Exact fixed versions are not in the evidence."],
+}
+
+
+def gemini_body(report: dict | str) -> dict:
+    text = report if isinstance(report, str) else json.dumps(report)
+    return {"candidates": [{"content": {"parts": [{"text": text}]}, "finishReason": "STOP"}],
+            "usageMetadata": {"promptTokenCount": 1200, "candidatesTokenCount": 300}}
+
+
+def groq_body(report: dict | str) -> dict:
+    text = report if isinstance(report, str) else json.dumps(report)
+    return {"choices": [{"message": {"role": "assistant", "content": text}}],
+            "usage": {"prompt_tokens": 1100, "completion_tokens": 280}}
+
+
 def router(overrides: dict | None = None, *, recent: str | None = None, calls: list | None = None):
     """Build a fake transport. overrides maps a source key to (status_code, json) or an exception."""
     overrides = overrides or {}
@@ -130,6 +157,10 @@ def router(overrides: dict | None = None, *, recent: str | None = None, calls: l
             return respond("urlhaus", (200, URLHAUS_BAD))
         if "mb-api.abuse.ch" in url:
             return respond("malwarebazaar", (200, BAZAAR_BAD))
+        if "generativelanguage.googleapis.com" in url:
+            return respond("gemini", (200, gemini_body(GOOD_REPORT)))
+        if "api.groq.com" in url:
+            return respond("groq", (200, groq_body(GOOD_REPORT)))
         return httpx2.Response(404)
 
     return httpx2.AsyncClient(transport=httpx2.MockTransport(handler))

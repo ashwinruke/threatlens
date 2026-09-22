@@ -1,3 +1,14 @@
+"""Shared building blocks for every intelligence source.
+
+Each source is a small class with the same shape:
+  - name: shown to users
+  - supports: which indicator types it can look up
+  - api_key_setting: which setting holds its key (None if no key needed)
+  - lookup(): calls the real service and returns normalized facts
+
+run_source() wraps every lookup with the same timeout and error handling,
+so one broken source never breaks a whole investigation.
+"""
 import asyncio
 import time
 from abc import ABC, abstractmethod
@@ -57,7 +68,8 @@ async def run_source(source: Source, indicator: Indicator, client: httpx2.AsyncC
     except NotFound as exc:
         return done(SourceStatus.NOT_FOUND, message=str(exc) or f"{source.name} has no record of this.")
     except (asyncio.TimeoutError, httpx2.TimeoutException):
-        return done(SourceStatus.TIMEOUT, message=f"{source.name} didn't answer within {timeout:.0f} seconds.")
+        waited = time.perf_counter() - started
+        return done(SourceStatus.TIMEOUT, message=f"{source.name} didn't answer in time (waited {waited:.0f} seconds).")
     except httpx2.HTTPStatusError as exc:
         code = exc.response.status_code
         if code == 429:

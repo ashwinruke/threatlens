@@ -1,3 +1,12 @@
+"""Explainable risk scoring.
+
+The score is a transparent formula, not an AI guess. Every point comes from a
+Signal that names its source and the exact evidence. The AI (from Day 3) explains
+the score in words, but never decides it.
+
+Levels: CRITICAL 80-100, HIGH 60-79, MEDIUM 35-59, LOW 0-34,
+and UNKNOWN when ThreatLens couldn't gather any usable evidence.
+"""
 from datetime import datetime, timedelta, timezone
 
 from app.known_good import KnownGoodResult
@@ -28,6 +37,11 @@ def parse_date(value: str | None) -> datetime | None:
         except ValueError:
             continue
     return None
+
+
+def _day(value: str | None) -> str:
+    parsed = parse_date(value)
+    return str(parsed.date()) if parsed else "unknown"
 
 
 def _confidence(results: list[SourceResult]) -> str:
@@ -90,7 +104,7 @@ def score_cve(indicator: Indicator, results: list[SourceResult], now: datetime |
                                        "Points: 20 if at least 50%, 12 if at least 10%, 5 if at least 1%."))
 
     # Public exploit reference (5 points)
-    if nvd and nvd.get("has_exploit_reference") and not kev:
+    if nvd and nvd.get("nvd_lists_exploit_reference") and not kev:
         signals.append(Signal(id="exploit_reference", label="Public exploit reference", points=5, source="NVD",
                               evidence="NVD lists at least one reference tagged 'Exploit'."))
 
@@ -153,7 +167,7 @@ def score_ioc(indicator: Indicator, results: list[SourceResult], known_good: Kno
         if points:
             signals.append(Signal(id="abuseipdb", label=f"Abuse confidence {confidence}%", points=points, source="AbuseIPDB",
                                   evidence=f"{abuse.get('total_reports', 0)} reports from {abuse.get('distinct_reporters', 0)} "
-                                           f"users in 90 days. Last report: {abuse.get('last_reported') or 'unknown'}."))
+                                           f"users in 90 days. Last report: {_day(abuse.get('last_reported'))}."))
         if abuse.get("is_tor"):
             signals.append(Signal(id="tor", label="Tor network address", points=10, source="AbuseIPDB",
                                   evidence="Tor hides who is behind the traffic. Not malicious by itself, but often worth a closer look."))
@@ -178,7 +192,7 @@ def score_ioc(indicator: Indicator, results: list[SourceResult], known_good: Kno
     if bazaar:
         signals.append(Signal(id="malwarebazaar", label=f"Known malware sample: {bazaar.get('malware_family') or 'unnamed family'}",
                               points=45, source="MalwareBazaar",
-                              evidence=f"MalwareBazaar only stores malware. First seen {bazaar.get('first_seen') or 'unknown'}."))
+                              evidence=f"MalwareBazaar only stores malware. First seen {_day(bazaar.get('first_seen'))}."))
 
     otx = _facts(results, "AlienVault OTX")
     if otx:
@@ -237,7 +251,8 @@ def score_ioc(indicator: Indicator, results: list[SourceResult], known_good: Kno
     if agreeing:
         headline = f"This {label} is {level} risk: reported by {', '.join(agreeing)}."
     elif known_good and known_good.is_known_good:
-        headline = f"This {label} appears legitimate: {known_good.reason}"
+        reason = known_good.reason or ""
+        headline = f"This {label} appears legitimate: {reason[:1].lower() + reason[1:]}"
     else:
         headline = (f"No intelligence source reported this {label} as malicious. "
                     "That lowers the risk but doesn't prove it's safe.")

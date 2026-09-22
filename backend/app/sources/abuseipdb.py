@@ -1,3 +1,4 @@
+"""AbuseIPDB: community reports of abusive IP addresses (scanning, brute force, spam...)."""
 import httpx2
 
 from app.models import Indicator, IndicatorType

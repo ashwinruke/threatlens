@@ -1,3 +1,7 @@
+"""All settings come from environment variables (or a local .env file).
+
+Keeping settings in one place means secrets never get hard-coded in the code.
+"""
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -7,7 +11,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "ThreatLens API"
-    app_version: str = "0.2.0"
+    app_version: str = "0.3.0"
     app_env: str = "development"
 
     database_url: str = ""
@@ -20,9 +24,15 @@ class Settings(BaseSettings):
     virustotal_api_key: str = ""
     abusech_auth_key: str = ""
 
-    # AI keys (used from Day 3)
+    # AI report writer: Gemini first, Groq as backup
     gemini_api_key: str = ""
     groq_api_key: str = ""
+    gemini_model: str = "gemini-3-flash-preview"
+    groq_model: str = "openai/gpt-oss-120b"
+    # Which AI to try first. Change the order if one provider becomes more reliable.
+    ai_provider_order: str = "groq,gemini"
+    ai_timeout_seconds: float = 45.0
+    ai_report_cache_hours: int = 6
 
     # Investigation behaviour
     source_timeout_seconds: float = 15.0

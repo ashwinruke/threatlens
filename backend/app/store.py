@@ -1,3 +1,11 @@
+"""Saving investigations and caching source answers.
+
+Two interchangeable stores:
+- PostgresStore: the real database (Neon), used when DATABASE_URL is set
+- MemoryStore: keeps data in memory, used in tests or when no database is configured
+
+The rest of ThreatLens doesn't care which one it's using.
+"""
 import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -7,7 +15,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from app.models import Indicator, Investigation, InvestigationSummary, SourceResult
+from app.models import Indicator, Investigation, InvestigationSummary, Report, SourceResult
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
@@ -16,6 +24,7 @@ class MemoryStore:
     def __init__(self) -> None:
         self.investigations: dict[str, Investigation] = {}
         self.cache: dict[tuple[str, str, str], SourceResult] = {}
+        self.reports: dict[str, tuple[datetime, Report]] = {}
 
     async def init(self) -> None:
         return None
@@ -31,6 +40,15 @@ class MemoryStore:
 
     async def put_cache(self, indicator: Indicator, result: SourceResult) -> None:
         self.cache[(result.source, indicator.type, indicator.value)] = result
+
+    async def get_report(self, key: str, max_age: timedelta) -> Report | None:
+        entry = self.reports.get(key)
+        if entry and datetime.now(timezone.utc) - entry[0] <= max_age:
+            return entry[1]
+        return None
+
+    async def put_report(self, key: str, report: Report) -> None:
+        self.reports[key] = (datetime.now(timezone.utc), report)
 
     async def save(self, investigation: Investigation) -> str:
         investigation.id = str(uuid.uuid4())
@@ -105,6 +123,26 @@ class PostgresStore:
                     "ON CONFLICT (source, indicator_type, indicator_value) "
                     "DO UPDATE SET result = EXCLUDED.result, fetched_at = now()",
                     (result.source, indicator.type.value, indicator.value, Jsonb(result.model_dump(mode="json"))),
+                )
+        await asyncio.to_thread(run)
+
+    async def get_report(self, key: str, max_age: timedelta) -> Report | None:
+        def run():
+            with self._connect() as conn:
+                return conn.execute(
+                    "SELECT report FROM ai_report_cache WHERE evidence_hash = %s AND created_at > now() - %s",
+                    (key, max_age),
+                ).fetchone()
+        row = await asyncio.to_thread(run)
+        return Report.model_validate(row["report"]) if row else None
+
+    async def put_report(self, key: str, report: Report) -> None:
+        def run() -> None:
+            with self._connect() as conn:
+                conn.execute(
+                    "INSERT INTO ai_report_cache (evidence_hash, report, created_at) VALUES (%s, %s, now()) "
+                    "ON CONFLICT (evidence_hash) DO UPDATE SET report = EXCLUDED.report, created_at = now()",
+                    (key, Jsonb(report.model_dump(mode="json"))),
                 )
         await asyncio.to_thread(run)
 

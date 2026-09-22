@@ -1,3 +1,7 @@
+"""ThreatLens API entry point.
+
+Run locally with:  uvicorn app.main:app --reload
+"""
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -50,7 +54,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS decides which websites are allowed to call this API from a browser.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,

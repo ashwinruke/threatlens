@@ -1,10 +1,23 @@
+"""Runs one investigation from start to finish and records every decision.
+
+Steps:
+  1. Detect what the input is
+  2. Check known-good lists (and skip lookups for private addresses)
+  3. Choose sources for this input type
+  4. Ask every source at the same time (using cached answers when fresh)
+  5. Score the risk from the evidence
+  6. Ask the AI to explain the result (Gemini, then Groq as backup)
+  7. Save the result
+"""
 import asyncio
+import logging
 import time
 from datetime import datetime, timedelta, timezone
 
 import httpx2
 
 from app import known_good as kg
+from app.ai.report import write_report
 from app.config import Settings
 from app.detection import detect
 from app.models import Indicator, IndicatorType, Investigation, SourceResult, SourceStatus
@@ -13,6 +26,8 @@ from app.sources import Source, run_source, sources_for
 from app.trace import Trace
 
 CACHEABLE = {SourceStatus.OK, SourceStatus.NOT_FOUND}
+SUBTYPE_NAMES = {"ipv4": "IPv4", "ipv6": "IPv6", "md5": "MD5", "sha1": "SHA-1", "sha256": "SHA-256"}
+logger = logging.getLogger("threatlens")
 
 
 async def _lookup_with_cache(source: Source, indicator: Indicator, client: httpx2.AsyncClient,
@@ -21,8 +36,10 @@ async def _lookup_with_cache(source: Source, indicator: Indicator, client: httpx
     max_age = timedelta(hours=hours)
     try:
         cached = await store.get_cached(source.name, indicator, max_age)
-    except Exception:
-        cached = None  # a cache problem should never stop an investigation
+    except Exception as exc:
+        # A cache problem should never stop an investigation, but it must be visible
+        logger.warning("Cache read failed for %s: %s: %s", source.name, type(exc).__name__, exc)
+        cached = None
     if cached:
         return cached
 
@@ -30,12 +47,13 @@ async def _lookup_with_cache(source: Source, indicator: Indicator, client: httpx
     if result.status in CACHEABLE:
         try:
             await store.put_cache(indicator, result)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Cache write failed for %s: %s: %s", source.name, type(exc).__name__, exc)
     return result
 
 
-async def investigate(query: str, settings: Settings, store, client: httpx2.AsyncClient) -> Investigation:
+async def investigate(query: str, settings: Settings, store, client: httpx2.AsyncClient,
+                      write_ai_report: bool = True) -> Investigation:
     """Raises DetectionError (with a friendly message) if the input isn't understood."""
     started = time.perf_counter()
     created_at = datetime.now(timezone.utc)
@@ -45,7 +63,7 @@ async def investigate(query: str, settings: Settings, store, client: httpx2.Asyn
     with trace.timed("detect", "Identified the input") as step:
         indicator = detect(query)
         step.title = f"Identified the input as {_article(indicator.type)}" + (
-            f" ({indicator.subtype})" if indicator.subtype else "")
+            f" ({SUBTYPE_NAMES.get(indicator.subtype, indicator.subtype)})" if indicator.subtype else "")
         step.reason = "Matched by pattern rules, not AI, so the result is predictable and explainable."
         step.detail = {"value": indicator.value, "notes": indicator.notes}
 
@@ -101,10 +119,30 @@ async def investigate(query: str, settings: Settings, store, client: httpx2.Asyn
 
     investigation = Investigation(
         query=query, indicator=indicator, verdict=verdict, signals=signals, sources=results,
-        trace=trace.steps, created_at=created_at, duration_ms=round((time.perf_counter() - started) * 1000),
+        trace=trace.steps, created_at=created_at, duration_ms=0,
     )
 
-    # 6. Save
+    # 6. AI report: explains the verdict, never changes it
+    if write_ai_report:
+        report = await write_report(investigation, settings, client, store)
+        investigation.report = report
+        if report.status == "ready":
+            title = ("Reused the AI summary written for this same evidence" if report.cached
+                     else f"Wrote the AI summary with {report.provider} ({report.model})")
+            reason = "The AI explains the score; it didn't set it."
+            if report.removed_claims:
+                reason += f" Removed {report.removed_claims} statement(s) that didn't cite a real source."
+            trace.add("report", title, reason=reason, duration_ms=None if report.cached else report.duration_ms,
+                      detail={"attempts": report.attempts, "input_tokens": report.input_tokens,
+                              "output_tokens": report.output_tokens})
+        else:
+            trace.add("report", "AI summary unavailable", status="error", reason=report.message,
+                      detail={"attempts": report.attempts})
+
+    investigation.duration_ms = round((time.perf_counter() - started) * 1000)
+
+    # 7. Save (with every step so far, including the report step)
+    investigation.trace = list(trace.steps)
     try:
         await store.save(investigation)
         trace.add("save", "Saved the investigation", detail={"id": investigation.id})

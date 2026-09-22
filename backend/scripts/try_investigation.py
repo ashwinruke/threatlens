@@ -22,7 +22,11 @@ LEVEL_MARK = {"CRITICAL": "!!!", "HIGH": "!! ", "MEDIUM": "!  ", "LOW": "   ", "
 
 async def main(query: str) -> None:
     settings = get_settings()
-    async with httpx2.AsyncClient(headers={"User-Agent": "ThreatLens/dev"}, follow_redirects=True) as client:
+    async with httpx2.AsyncClient(
+        timeout=httpx2.Timeout(settings.source_timeout_seconds),  # same timeout as the server
+        headers={"User-Agent": "ThreatLens/dev"},
+        follow_redirects=True,
+    ) as client:
         try:
             result = await investigate(query, settings, MemoryStore(), client)
         except DetectionError as exc:
@@ -39,6 +43,26 @@ async def main(query: str) -> None:
         print(f"        {s.evidence}")
     for rule in v.rules_applied:
         print(f"  rule: {rule}")
+
+    report = result.report
+    if report and report.status == "ready":
+        print(f"\nAI SUMMARY ({report.provider} {report.model}{', reused' if report.cached else ''})")
+        print(f"  {report.summary}")
+        for label, items in (("Findings", report.findings), ("Affected", report.affected)):
+            for item in items:
+                print(f"  {label}: {item.text}  {item.sources}")
+        for action in report.actions:
+            print(f"  Action ({action.priority}): {action.text}  {action.sources}")
+        for gap in report.gaps:
+            print(f"  Gap: {gap}")
+        if report.removed_claims:
+            print(f"  ({report.removed_claims} statement(s) removed for missing sources)")
+        for attempt in report.attempts:
+            print(f"  Attempt: {attempt}")
+    elif report:
+        print(f"\nAI SUMMARY unavailable: {report.message}")
+        for attempt in report.attempts:
+            print(f"  {attempt}")
 
     print("\nSOURCES")
     for src in result.sources:

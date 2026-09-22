@@ -1,3 +1,11 @@
+"""Checks that prevent common false alarms.
+
+Real SOC teams lose a lot of time to alerts about harmless things,
+like Google's DNS server or a Microsoft update domain.
+
+Important: "known good" lowers the score but never hides evidence.
+Attackers abuse trusted platforms, so the analyst always sees what sources said.
+"""
 import ipaddress
 from dataclasses import dataclass
 

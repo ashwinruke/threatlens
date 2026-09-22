@@ -1,6 +1,11 @@
+"""The shapes of data that move through ThreatLens.
+
+Every investigation produces the same structure, whatever the input type,
+so the frontend and (from Day 3) the AI report writer always know what to expect.
+"""
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -75,6 +80,46 @@ class TraceStep(BaseModel):
     duration_ms: int | None = None
 
 
+class CitedPoint(BaseModel):
+    """One statement in the AI report, with the sources that support it."""
+
+    text: str
+    sources: list[str] = Field(default_factory=list)  # citation ids like "S1"
+
+
+class Action(BaseModel):
+    text: str
+    priority: Literal["now", "soon", "later"] = "soon"
+    sources: list[str] = Field(default_factory=list)
+
+
+class Citation(BaseModel):
+    id: str  # "S1"
+    source: str  # "NVD"
+    link: str | None = None  # always taken from ThreatLens's own data, never from the AI
+
+
+class Report(BaseModel):
+    """The AI-written explanation. The verdict and score never come from here."""
+
+    status: Literal["ready", "unavailable"]
+    summary: str = ""
+    findings: list[CitedPoint] = Field(default_factory=list)
+    affected: list[CitedPoint] = Field(default_factory=list)
+    actions: list[Action] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
+    citations: list[Citation] = Field(default_factory=list)
+    provider: str | None = None  # "Gemini" or "Groq"
+    model: str | None = None
+    duration_ms: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    removed_claims: int = 0  # statements dropped because they had no valid source
+    attempts: list[str] = Field(default_factory=list)  # what happened with each provider
+    cached: bool = False
+    message: str | None = None  # why it's unavailable
+
+
 class Investigation(BaseModel):
     id: str | None = None
     query: str
@@ -83,6 +128,7 @@ class Investigation(BaseModel):
     signals: list[Signal]
     sources: list[SourceResult]
     trace: list[TraceStep]
+    report: Report | None = None
     created_at: datetime
     duration_ms: int
 

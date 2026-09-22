@@ -1,3 +1,7 @@
+"""Database helpers.
+
+Day 1 only needs a health check. Real tables arrive on Day 2.
+"""
 import time
 
 import psycopg

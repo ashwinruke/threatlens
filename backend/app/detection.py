@@ -1,3 +1,8 @@
+"""Figure out what the user entered, using simple rules (no AI).
+
+Rules are faster, cheaper, and more predictable than asking an LLM,
+and every decision can be explained exactly.
+"""
 import ipaddress
 import re
 from urllib.parse import urlsplit

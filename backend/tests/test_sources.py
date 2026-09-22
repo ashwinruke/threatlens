@@ -34,7 +34,7 @@ def test_nvd_normalizes_cve():
     assert result.facts["weaknesses"] == ["CWE-20", "CWE-502"]
     assert result.facts["affected_products"] == ["apache log4j"]
     assert result.facts["references"][0]["tags"] == ["Vendor Advisory"]
-    assert result.facts["has_exploit_reference"]
+    assert result.facts["nvd_lists_exploit_reference"]
     assert result.link == "https://nvd.nist.gov/vuln/detail/CVE-2021-44228"
 
 

@@ -116,7 +116,7 @@ def test_trace_records_decisions_in_order():
     kinds = [step.kind for step in result.trace]
     assert kinds[0] == "detect" and kinds[1] == "decide"
     assert kinds.count("fetch") == 5
-    assert kinds[-3:] == ["score", "verdict", "save"]
+    assert kinds[-4:] == ["score", "verdict", "report", "save"]
     assert [s.step for s in result.trace] == list(range(1, len(result.trace) + 1))
 
 

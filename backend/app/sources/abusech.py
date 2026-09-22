@@ -1,3 +1,9 @@
+"""abuse.ch projects. One Auth-Key works for all three:
+
+- ThreatFox: IOCs (IPs, domains, hashes) linked to malware families
+- URLhaus: websites and IPs used to spread malware
+- MalwareBazaar: a database of real malware samples (by hash)
+"""
 import httpx2
 
 from app.models import Indicator, IndicatorType

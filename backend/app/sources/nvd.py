@@ -81,5 +81,5 @@ class NVDSource(Source):
             "weaknesses": weaknesses,
             "affected_products": _products(cve.get("configurations", [])),
             "references": references[:10],
-            "has_exploit_reference": any("Exploit" in r["tags"] for r in references),
+            "nvd_lists_exploit_reference": any("Exploit" in r["tags"] for r in references),
         }
