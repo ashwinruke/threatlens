@@ -33,7 +33,14 @@ export default function App() {
       <Header />
       {page}
       <footer className="footer">
-        ThreatLens checks public threat intelligence passively. It never connects to the indicators you investigate.
+        <p>
+          ThreatLens checks public threat intelligence passively. It never connects to the indicators you investigate,
+          and it never sends private or internal addresses to outside services.
+        </p>
+        <p className="footer__links">
+          <a href="https://github.com/ashwinruke/threatlens" target="_blank" rel="noopener noreferrer">Source code on GitHub</a>
+          <Link to="/status">System status</Link>
+        </p>
       </footer>
     </>
   );

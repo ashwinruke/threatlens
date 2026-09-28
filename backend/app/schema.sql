@@ -38,3 +38,21 @@ CREATE TABLE IF NOT EXISTS ai_report_cache (
     report          JSONB NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Daily counters (investigations run, AI reports written), so limits survive a restart.
+CREATE TABLE IF NOT EXISTS daily_counters (
+    day             DATE NOT NULL,
+    name            TEXT NOT NULL,
+    count           INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, name)
+);
+
+-- Investigations pinned to the home page as ready-made examples.
+CREATE TABLE IF NOT EXISTS pinned_examples (
+    slot             TEXT PRIMARY KEY,
+    label            TEXT NOT NULL,
+    note             TEXT NOT NULL,
+    position         INTEGER NOT NULL DEFAULT 0,
+    investigation_id UUID NOT NULL REFERENCES investigations(id) ON DELETE CASCADE,
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -20,7 +20,7 @@ from app import known_good as kg
 from app.ai.report import write_report
 from app.config import Settings
 from app.detection import detect
-from app.models import Indicator, IndicatorType, Investigation, SourceResult, SourceStatus
+from app.models import Indicator, IndicatorType, Investigation, Report, SourceResult, SourceStatus
 from app.scoring import score_cve, score_ioc
 from app.sources import Source, run_source, sources_for
 from app.trace import Trace
@@ -53,7 +53,8 @@ async def _lookup_with_cache(source: Source, indicator: Indicator, client: httpx
 
 
 async def investigate(query: str, settings: Settings, store, client: httpx2.AsyncClient,
-                      write_ai_report: bool = True) -> Investigation:
+                      write_ai_report: bool = True, ai_cache_only: bool = False,
+                      ai_skipped_message: str | None = None) -> Investigation:
     """Raises DetectionError (with a friendly message) if the input isn't understood."""
     started = time.perf_counter()
     created_at = datetime.now(timezone.utc)
@@ -123,8 +124,12 @@ async def investigate(query: str, settings: Settings, store, client: httpx2.Asyn
     )
 
     # 6. AI report: explains the verdict, never changes it
-    if write_ai_report:
-        report = await write_report(investigation, settings, client, store)
+    if not write_ai_report and ai_skipped_message:
+        investigation.report = Report(status="unavailable", message=ai_skipped_message)
+        trace.add("report", "AI summary skipped", status="error", reason=ai_skipped_message)
+    elif write_ai_report:
+        report = await write_report(investigation, settings, client, store,
+                                    cache_only=ai_cache_only, unavailable_message=ai_skipped_message)
         investigation.report = report
         if report.status == "ready":
             title = ("Reused the AI summary written for this same evidence" if report.cached

@@ -137,6 +137,19 @@ class InvestigateRequest(BaseModel):
     query: str = Field(min_length=1, max_length=500)
 
 
+class Example(BaseModel):
+    """A ready-made investigation pinned to the home page."""
+
+    slot: str
+    label: str
+    note: str
+    investigation_id: str
+    indicator_type: IndicatorType
+    indicator_value: str
+    score: int
+    level: str
+
+
 class InvestigationSummary(BaseModel):
     id: str
     query: str

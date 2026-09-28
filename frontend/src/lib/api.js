@@ -62,5 +62,6 @@ export const api = {
     loaded.set(id, result);
     return result;
   },
+  examples: () => request("/api/examples", { timeoutMs: 75_000 }),
   listInvestigations: (limit = 20) => request(`/api/investigations?limit=${limit}`, { timeoutMs: 75_000 }),
 };

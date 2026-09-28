@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import Examples from "../components/Examples";
+import HowItWorks from "../components/HowItWorks";
 import Lens from "../components/Lens";
 import SearchBox from "../components/SearchBox";
 import { api } from "../lib/api";
@@ -24,9 +26,11 @@ export function InvestigationRows({ items }) {
 
 export default function HomePage() {
   const [recent, setRecent] = useState(null);
+  const [examples, setExamples] = useState([]);
 
   useEffect(() => {
     api.listInvestigations(5).then(setRecent).catch(() => setRecent([]));
+    api.examples().then(setExamples).catch(() => setExamples([]));
   }, []);
 
   return (
@@ -44,6 +48,10 @@ export default function HomePage() {
       </section>
 
       <SearchBox autoFocus />
+
+      <Examples items={examples} />
+
+      <HowItWorks />
 
       {recent && recent.length > 0 && (
         <section className="recent" aria-labelledby="recent-title">

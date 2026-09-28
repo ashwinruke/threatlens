@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "ThreatLens API"
-    app_version: str = "0.3.0"
+    app_version: str = "0.4.0"
     app_env: str = "development"
 
     database_url: str = ""
@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     ai_provider_order: str = "groq,gemini"
     ai_timeout_seconds: float = 45.0
     ai_report_cache_hours: int = 6
+
+    # Limits that protect the free tiers on a public demo
+    investigations_per_hour_per_visitor: int = 10
+    detects_per_minute_per_visitor: int = 60
+    daily_investigation_cap: int = 300
+    daily_ai_report_cap: int = 200
 
     # Investigation behaviour
     source_timeout_seconds: float = 15.0

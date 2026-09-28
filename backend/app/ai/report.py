@@ -82,7 +82,7 @@ def _check(draft: _Draft, valid_ids: set[str]) -> tuple[dict, int]:
 
 
 async def write_report(investigation: Investigation, settings: Settings, client: httpx2.AsyncClient,
-                       store) -> Report:
+                       store, cache_only: bool = False, unavailable_message: str | None = None) -> Report:
     packet, citations = build_evidence(investigation)
     valid_ids = {c.id for c in citations}
     providers = [p for p in providers_in_order(settings) if p.is_configured()]
@@ -98,6 +98,11 @@ async def write_report(investigation: Investigation, settings: Settings, client:
         saved = None
     if saved:
         return saved.model_copy(update={"cached": True})
+
+    # Over the daily AI limit: a saved report still costs nothing, but a new one isn't written
+    if cache_only:
+        return Report(status="unavailable", citations=citations,
+                      message=unavailable_message or "No new AI summaries are being written right now.")
 
     attempts: list[str] = []
     message = user_message(packet)

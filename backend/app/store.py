@@ -15,7 +15,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from app.models import Indicator, Investigation, InvestigationSummary, Report, SourceResult
+from app.models import Example, Indicator, Investigation, InvestigationSummary, Report, SourceResult
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
@@ -25,6 +25,8 @@ class MemoryStore:
         self.investigations: dict[str, Investigation] = {}
         self.cache: dict[tuple[str, str, str], SourceResult] = {}
         self.reports: dict[str, tuple[datetime, Report]] = {}
+        self.counters: dict[tuple[str, str], int] = {}
+        self.pinned: dict[str, dict] = {}
 
     async def init(self) -> None:
         return None
@@ -61,6 +63,27 @@ class MemoryStore:
     async def recent(self, limit: int) -> list[InvestigationSummary]:
         items = sorted(self.investigations.values(), key=lambda i: i.created_at, reverse=True)[:limit]
         return [_summary(i) for i in items]
+
+    async def count_today(self, name: str, add: int = 1) -> int:
+        key = (str(datetime.now(timezone.utc).date()), name)
+        self.counters[key] = self.counters.get(key, 0) + add
+        return self.counters[key]
+
+    async def pin_example(self, slot: str, label: str, note: str, position: int, investigation_id: str) -> None:
+        self.pinned[slot] = {"slot": slot, "label": label, "note": note, "position": position,
+                             "investigation_id": investigation_id}
+
+    async def examples(self) -> list[Example]:
+        found = []
+        for row in sorted(self.pinned.values(), key=lambda r: r["position"]):
+            investigation = self.investigations.get(row["investigation_id"])
+            if investigation:
+                found.append(Example(slot=row["slot"], label=row["label"], note=row["note"],
+                                     investigation_id=row["investigation_id"],
+                                     indicator_type=investigation.indicator.type,
+                                     indicator_value=investigation.indicator.value,
+                                     score=investigation.verdict.score, level=investigation.verdict.level))
+        return found
 
 
 class PostgresStore:
@@ -186,6 +209,43 @@ class PostgresStore:
         return [InvestigationSummary(id=str(r["id"]), query=r["query"], indicator_type=r["indicator_type"],
                                      indicator_value=r["indicator_value"], score=r["score"], level=r["level"],
                                      created_at=r["created_at"]) for r in rows]
+
+
+    async def count_today(self, name: str, add: int = 1) -> int:
+        def run():
+            with self._connect() as conn:
+                return conn.execute(
+                    "INSERT INTO daily_counters (day, name, count) VALUES (current_date, %s, %s) "
+                    "ON CONFLICT (day, name) DO UPDATE SET count = daily_counters.count + EXCLUDED.count "
+                    "RETURNING count", (name, add),
+                ).fetchone()
+        row = await asyncio.to_thread(run)
+        return row["count"]
+
+    async def pin_example(self, slot: str, label: str, note: str, position: int, investigation_id: str) -> None:
+        def run() -> None:
+            with self._connect() as conn:
+                conn.execute(
+                    "INSERT INTO pinned_examples (slot, label, note, position, investigation_id, updated_at) "
+                    "VALUES (%s, %s, %s, %s, %s, now()) ON CONFLICT (slot) DO UPDATE SET "
+                    "label = EXCLUDED.label, note = EXCLUDED.note, position = EXCLUDED.position, "
+                    "investigation_id = EXCLUDED.investigation_id, updated_at = now()",
+                    (slot, label, note, position, investigation_id),
+                )
+        await asyncio.to_thread(run)
+
+    async def examples(self) -> list[Example]:
+        def run():
+            with self._connect() as conn:
+                return conn.execute(
+                    "SELECT e.slot, e.label, e.note, e.investigation_id, i.indicator_type, i.indicator_value, "
+                    "i.score, i.level FROM pinned_examples e JOIN investigations i ON i.id = e.investigation_id "
+                    "ORDER BY e.position",
+                ).fetchall()
+        rows = await asyncio.to_thread(run)
+        return [Example(slot=r["slot"], label=r["label"], note=r["note"],
+                        investigation_id=str(r["investigation_id"]), indicator_type=r["indicator_type"],
+                        indicator_value=r["indicator_value"], score=r["score"], level=r["level"]) for r in rows]
 
 
 def _summary(i: Investigation) -> InvestigationSummary:

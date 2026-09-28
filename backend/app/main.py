@@ -15,11 +15,13 @@ from app.config import get_settings
 from app.db import check_database
 from app.detection import DetectionError, detect
 from app.investigate import investigate
-from app.models import Indicator, InvestigateRequest, Investigation, InvestigationSummary
+from app.limits import VisitorLimiter, visitor_key
+from app.models import Example, Indicator, InvestigateRequest, Investigation, InvestigationSummary
 from app.store import MemoryStore, PostgresStore
 
 logger = logging.getLogger("threatlens")
 settings = get_settings()
+limiter = VisitorLimiter()
 
 
 @asynccontextmanager
@@ -86,8 +88,12 @@ def health_db():
 
 
 @app.post("/api/detect", response_model=Indicator)
-def detect_input(body: InvestigateRequest):
+def detect_input(body: InvestigateRequest, request: Request):
     """Only identify the input type, without contacting any source. Useful for instant form feedback."""
+    decision = limiter.check("detect", visitor_key(request), settings.detects_per_minute_per_visitor, 60)
+    if not decision.allowed:
+        raise HTTPException(status_code=429, detail="Too many requests. Slow down for a moment.",
+                            headers={"Retry-After": str(decision.retry_after_seconds)})
     try:
         return detect(body.query)
     except DetectionError as exc:
@@ -97,10 +103,43 @@ def detect_input(body: InvestigateRequest):
 @app.post("/api/investigations", response_model=Investigation)
 async def create_investigation(body: InvestigateRequest, request: Request):
     """Run a full investigation. Usually takes a few seconds."""
+    store = request.app.state.store
+    decision = limiter.check("investigate", visitor_key(request),
+                             settings.investigations_per_hour_per_visitor, 3600)
+    if not decision.allowed:
+        raise HTTPException(status_code=429, detail=decision.message,
+                            headers={"Retry-After": str(decision.retry_after_seconds)})
+
+    # Daily ceilings for everyone, so the free tiers survive a busy day
+    used_today = await store.count_today("investigations")
+    if used_today > settings.daily_investigation_cap:
+        raise HTTPException(
+            status_code=429,
+            detail=("ThreatLens has reached its daily investigation limit for this free demo. "
+                    "The example investigations below still work, and new searches open again tomorrow."),
+        )
+    ai_used_today = await store.count_today("ai_reports", add=0)
+    ai_allowed = ai_used_today < settings.daily_ai_report_cap
+
     try:
-        return await investigate(body.query, settings, request.app.state.store, request.app.state.http)
+        result = await investigate(
+            body.query, settings, store, request.app.state.http,
+            ai_cache_only=not ai_allowed,
+            ai_skipped_message=("The daily AI summary limit for this free demo has been reached. "
+                                "The score, evidence, and decision trail below are unaffected."),
+        )
     except DetectionError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+    if result.report and result.report.status == "ready" and not result.report.cached:
+        await store.count_today("ai_reports")
+    return result
+
+
+@app.get("/api/examples", response_model=list[Example])
+async def list_examples(request: Request):
+    """Ready-made investigations pinned to the home page. Filled in by scripts/seed_examples.py."""
+    return await request.app.state.store.examples()
 
 
 @app.get("/api/investigations", response_model=list[InvestigationSummary])
