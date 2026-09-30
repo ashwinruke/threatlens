@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "ThreatLens API"
-    app_version: str = "0.4.0"
+    app_version: str = "0.5.0"
     app_env: str = "development"
 
     database_url: str = ""

@@ -105,6 +105,10 @@ class PostgresStore:
             raise RuntimeError("PostgresStore.init() must run before using the store.")
         return self.pool.connection()
 
+    def connection(self):
+        """A pooled connection, for other parts of ThreatLens (like the knowledge graph)."""
+        return self._connect()
+
     async def init(self) -> None:
         def run() -> None:
             self.pool = ConnectionPool(

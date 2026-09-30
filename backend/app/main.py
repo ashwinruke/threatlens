@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.db import check_database
 from app.detection import DetectionError, detect
 from app.investigate import investigate
+from app.knowledge.api import router as knowledge_router
 from app.limits import VisitorLimiter, visitor_key
 from app.models import Example, Indicator, InvestigateRequest, Investigation, InvestigationSummary
 from app.store import MemoryStore, PostgresStore
@@ -55,6 +56,8 @@ app = FastAPI(
     description="ThreatLens — See the threat before it sees you.",
     lifespan=lifespan,
 )
+
+app.include_router(knowledge_router)
 
 app.add_middleware(
     CORSMiddleware,

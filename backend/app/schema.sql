@@ -56,3 +56,51 @@ CREATE TABLE IF NOT EXISTS pinned_examples (
     investigation_id UUID NOT NULL REFERENCES investigations(id) ON DELETE CASCADE,
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ---------------------------------------------------------------------------
+-- Threat knowledge graph (Phase 2). Filled by scripts/import_attack.py.
+-- ---------------------------------------------------------------------------
+
+-- Any "thing" in the graph: techniques, tactics, groups, malware, tools, campaigns, mitigations.
+CREATE TABLE IF NOT EXISTS entities (
+    id              TEXT PRIMARY KEY,
+    kind            TEXT NOT NULL,
+    external_id     TEXT,
+    name            TEXT NOT NULL,
+    aliases         TEXT[] NOT NULL DEFAULT '{}',
+    description     TEXT NOT NULL DEFAULT '',
+    url             TEXT,
+    source          TEXT NOT NULL,
+    details         JSONB NOT NULL DEFAULT '{}',
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS entities_external_id_idx ON entities (upper(external_id));
+CREATE INDEX IF NOT EXISTS entities_kind_idx ON entities (kind);
+
+-- How entities connect: "APT29 uses Mimikatz", "M1043 mitigates T1003.001".
+CREATE TABLE IF NOT EXISTS relationships (
+    id              TEXT PRIMARY KEY,
+    source_id       TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    target_id       TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    type            TEXT NOT NULL,
+    description     TEXT NOT NULL DEFAULT '',
+    source          TEXT NOT NULL,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS relationships_source_idx ON relationships (source_id);
+CREATE INDEX IF NOT EXISTS relationships_target_idx ON relationships (target_id);
+
+-- IDs MITRE retired, pointing at the entry that replaced them.
+CREATE TABLE IF NOT EXISTS entity_redirects (
+    old_external_id TEXT PRIMARY KEY,
+    entity_id       TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    source          TEXT NOT NULL
+);
+
+-- Which version of each knowledge source is loaded.
+CREATE TABLE IF NOT EXISTS knowledge_imports (
+    source          TEXT PRIMARY KEY,
+    version         TEXT,
+    imported_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    counts          JSONB NOT NULL DEFAULT '{}'
+);
