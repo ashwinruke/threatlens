@@ -5,7 +5,8 @@ Run from the backend folder:   python -m scripts.seed_examples
 It runs a few investigations and pins them, so a first-time visitor sees real
 results instantly instead of waiting for a sleeping server.
 
-Two examples are fixed (Log4Shell, Google's public DNS). Two are picked live from
+Four examples are fixed (Log4Shell, Volt Typhoon, a medium CVE, Google's public DNS).
+Volt Typhoon needs ATT&CK imported first (python -m scripts.import_attack). Two are picked live from
 abuse.ch, so they're always real, current threats:
   - a malware sample hash from MalwareBazaar
   - a botnet address from ThreatFox
@@ -26,6 +27,8 @@ from app.store import PostgresStore
 FIXED = [
     ("log4shell", "Log4Shell", "The 2021 flaw that hit almost every Java application. Still exploited today.",
      "CVE-2021-44228"),
+    ("threat-group", "Volt Typhoon", "A state-sponsored group, by name: its tools, techniques, and the defenses that cover the most of them.",
+     "Volt Typhoon"),
     ("medium-cve", "A medium-risk CVE", "Serious on paper, but not exploited in the wild. Shows how the score separates the two.",
      "CVE-2024-48990"),
     ("known-good", "Google's public DNS", "A harmless address analysts see constantly. Shows how false alarms are avoided.",

@@ -87,3 +87,42 @@ class KnowledgeStats(BaseModel):
     imported_at: datetime | None
     entities: dict[str, int]
     relationships: int
+
+
+class TechniqueRef(BaseModel):
+    external_id: str | None
+    name: str
+    url: str | None
+    tactics: list[str] = Field(default_factory=list)
+
+
+class TacticCount(BaseModel):
+    name: str
+    count: int
+
+
+class MitigationCoverage(BaseModel):
+    """A defense, and how many of the threat's techniques it helps against."""
+
+    external_id: str | None
+    name: str
+    url: str | None
+    covers: int
+
+
+class ThreatProfile(BaseModel):
+    entity: Entity
+    related: list[RelatedGroup]
+    techniques: list[TechniqueRef] = Field(default_factory=list)  # techniques this threat uses
+    tactics: list[TacticCount] = Field(default_factory=list)  # how those techniques spread across tactics
+    mitigations: list[MitigationCoverage] = Field(default_factory=list)  # defenses ranked by coverage
+
+
+class ThreatLookup(BaseModel):
+    """The result of looking up a threat name in the knowledge base."""
+
+    query: str
+    status: str  # matched, ambiguous, not_found, unavailable
+    matched_on: str | None = None  # "name", "alias: Cozy Bear", "similar name", ...
+    candidates: list[SearchResult] = Field(default_factory=list)  # other close matches to choose from
+    profile: ThreatProfile | None = None

@@ -54,17 +54,68 @@ def _try_ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
         return None
 
 
+NAME_MAX_LENGTH = 100
+# ATT&CK IDs: techniques (T1059, T1059.001), tactics (TA0006), groups, software, campaigns, mitigations
+ATTACK_ID_RE = re.compile(r"^(?:T\d{4}(?:\.\d{3})?|TA\d{4}|[GSCM]\d{4})$", re.IGNORECASE)
+NOT_IN_NAMES = re.compile(r"[.@:/\\]")
+
+
 def detect(raw: str) -> Indicator:
+    """Identify the input: CVE, IP, domain, hash, or the name of a known threat.
+
+    Order matters: structured indicators are tried first, so "evil.com" is always a domain.
+    Anything else that reads like a name ("Volt Typhoon", "LockBit", "APT29", "G1017")
+    becomes a threat name, which ThreatLens looks up in its MITRE ATT&CK knowledge base.
+    """
     original = raw
     text = raw.strip().strip("'\"`<>")
     if not text:
-        raise DetectionError("Please enter a CVE, IP address, domain, or file hash.")
-    if any(ch.isspace() for ch in text):
-        raise DetectionError(
-            "That looks like more than one thing. Enter a single CVE, IP, domain, or hash. "
-            "Bulk lookups are coming in a later version."
-        )
+        raise DetectionError("Please enter a CVE, IP address, domain, file hash, or threat name.")
 
+    if any(ch.isspace() for ch in text):
+        # Several words: a name like "Volt Typhoon", unless one of them is an indicator
+        if any(_is_indicator(token) for token in text.split()):
+            raise DetectionError(
+                "That looks like more than one thing. Enter a single CVE, IP, domain, hash, or threat name. "
+                "Bulk lookups are coming in a later version."
+            )
+        return _threat_name(text, original)
+
+    indicator = _detect_indicator(text, original)
+    if indicator:
+        return indicator
+    if _looks_like_name(text):
+        return _threat_name(text, original)
+    raise DetectionError(
+        "ThreatLens couldn't recognize that. Try a CVE (CVE-2021-44228), an IP (203.0.113.7), "
+        "a domain (example.com), an MD5/SHA-1/SHA-256 hash, or a threat name (Volt Typhoon)."
+    )
+
+
+def _is_indicator(token: str) -> bool:
+    try:
+        return _detect_indicator(token, token) is not None
+    except DetectionError:
+        return True  # a malformed indicator still isn't part of a name
+
+
+def _looks_like_name(text: str) -> bool:
+    if len(text) > NAME_MAX_LENGTH or not any(ch.isalpha() for ch in text):
+        return False
+    return bool(ATTACK_ID_RE.match(text)) or not NOT_IN_NAMES.search(text)
+
+
+def _threat_name(text: str, original: str) -> Indicator:
+    name = " ".join(text.split())
+    if len(name) > NAME_MAX_LENGTH:
+        raise DetectionError(f"Threat names can be up to {NAME_MAX_LENGTH} characters.")
+    if not any(ch.isalpha() for ch in name) or "://" in name:
+        raise DetectionError("ThreatLens couldn't recognize that as an indicator or a threat name.")
+    return Indicator(type=IndicatorType.THREAT, value=name, original=original)
+
+
+def _detect_indicator(text: str, original: str) -> Indicator | None:
+    """CVE, hash, IP, or domain. None if it's none of these; DetectionError if it's a broken one."""
     text, refanged = refang(text)
     notes: list[str] = []
     if refanged:
@@ -111,12 +162,10 @@ def detect(raw: str) -> Indicator:
     try:
         domain = domain.encode("idna").decode("ascii")  # international names -> xn--
     except UnicodeError:
-        raise DetectionError("That domain name contains characters that can't be used in a domain.")
+        if "." in domain:
+            raise DetectionError("That domain name contains characters that can't be used in a domain.")
+        return None
     if DOMAIN_RE.match(domain) and len(domain) <= 253:
         return Indicator(type=IndicatorType.DOMAIN, value=domain, original=original,
                          refanged=refanged, notes=notes)
-
-    raise DetectionError(
-        "ThreatLens couldn't recognize that. Try a CVE (CVE-2021-44228), an IP (203.0.113.7), "
-        "a domain (example.com), or an MD5/SHA-1/SHA-256 hash."
-    )
+    return None

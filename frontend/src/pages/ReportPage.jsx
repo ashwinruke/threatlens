@@ -3,6 +3,7 @@ import AiSummary from "../components/AiSummary";
 import Lens from "../components/Lens";
 import ScoreLedger from "../components/ScoreLedger";
 import SourceList from "../components/SourceList";
+import { Candidates, ProfileDetails, ProfileSide } from "../components/ThreatProfile";
 import Timeline from "../components/Timeline";
 import { api } from "../lib/api";
 import { seconds, timeAgo, typeName } from "../lib/format";
@@ -14,7 +15,11 @@ const LEVEL_TEXT = {
   MEDIUM: "Medium risk",
   LOW: "Low risk",
   UNKNOWN: "Unknown risk",
+  PROFILE: "Threat profile",
 };
+
+// A threat name that didn't resolve to one ATT&CK entry: no risk was assessed, so say what happened instead
+const UNMATCHED_TEXT = { ambiguous: "Several matches", not_found: "No match", unavailable: "Not available" };
 
 function CopyLink() {
   const [copied, setCopied] = useState(false);
@@ -63,14 +68,19 @@ export default function ReportPage({ id }) {
     );
   }
 
-  const { indicator, verdict } = data;
-  document.title = `${indicator.value}: ${LEVEL_TEXT[verdict.level]} | ThreatLens`;
+  const { indicator, verdict, threat } = data;
+  const profile = threat?.status === "matched" ? threat.profile : null;
+  const unmatched = threat && !profile;
+  document.title = `${indicator.value}: ${unmatched ? UNMATCHED_TEXT[threat.status] || "No match" : LEVEL_TEXT[verdict.level]} | ThreatLens`;
+  const lensLabel = profile
+    ? `Threat profile for ${profile.entity.name}, ATT&CK ${profile.entity.external_id}`
+    : `Risk score ${verdict.score} out of 100, ${verdict.level}`;
 
   return (
     <main className="page page--wide">
       <section className={`verdict lvl-${verdict.level}`}>
-        <Lens score={verdict.score} level={verdict.level} size={176}
-          label={`Risk score ${verdict.score} out of 100, ${verdict.level}`} />
+        <Lens score={verdict.score} level={verdict.level} size={176} label={lensLabel}
+          badge={profile?.entity.external_id} />
         <div className="verdict__text">
           <p className="verdict__type">{typeName(indicator)}</p>
           <h1 className="verdict__value">{indicator.value}</h1>
@@ -78,25 +88,53 @@ export default function ReportPage({ id }) {
             <p className="verdict__note">You entered <code>{indicator.original}</code>. {indicator.notes.join(" ")}</p>
           )}
           <p className="verdict__level">
-            <span className="level-pill">{LEVEL_TEXT[verdict.level]}</span>
-            <span className="verdict__confidence">{verdict.confidence} confidence</span>
+            <span className="level-pill">
+              {unmatched ? UNMATCHED_TEXT[threat.status] || "No match" : LEVEL_TEXT[verdict.level]}
+            </span>
+            {!unmatched && (
+              <span className="verdict__confidence">
+                {profile ? `matched by ${threat.matched_on}` : `${verdict.confidence} confidence`}
+              </span>
+            )}
           </p>
           <p className="verdict__headline">{verdict.headline}</p>
+          {verdict.rules_applied.length > 0 && profile && (
+            <p className="verdict__note">{verdict.rules_applied.join(" ")}</p>
+          )}
           <p className="verdict__meta">
             Investigated {timeAgo(data.created_at)}, took {seconds(data.duration_ms)}. <CopyLink />
           </p>
         </div>
       </section>
 
-      <div className="report-grid">
-        <div className="report-grid__main">
-          <AiSummary report={data.report} />
+      {unmatched ? (
+        <div className="report-single">
+          <Candidates lookup={threat} />
+          {threat.candidates.length === 0 && (
+            <p className="notice">
+              Try another spelling, an alias from a report (like "Cozy Bear"), or an ATT&CK ID (like G1017).
+            </p>
+          )}
         </div>
-        <aside className="report-grid__side">
-          <ScoreLedger signals={data.signals} verdict={verdict} />
-          <SourceList sources={data.sources} />
-        </aside>
-      </div>
+      ) : (
+        <div className="report-grid">
+          <div className="report-grid__main">
+            <AiSummary report={data.report} />
+          </div>
+          <aside className="report-grid__side">
+            {profile ? (
+              <ProfileSide lookup={threat} />
+            ) : (
+              <>
+                <ScoreLedger signals={data.signals} verdict={verdict} />
+                <SourceList sources={data.sources} />
+              </>
+            )}
+          </aside>
+        </div>
+      )}
+
+      {profile && <ProfileDetails profile={profile} />}
 
       <Timeline steps={data.trace} />
     </main>

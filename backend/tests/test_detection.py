@@ -44,8 +44,10 @@ def test_refang_leaves_normal_words_alone():
 
 @pytest.mark.parametrize("raw, message_part", [
     ("", "Please enter"),
-    ("two things", "more than one"),
-    ("abc", "couldn't recognize"),
+    ("8.8.8.8 1.1.1.1", "more than one"),
+    ("block 8.8.8.8 now", "more than one"),
+    ("12345", "couldn't recognize"),
+    ("x" * 101, "couldn't recognize"),
     ("1.2.3", "couldn't recognize"),
     ("a" * 30, "30 characters"),
     ("-bad-.com", "couldn't recognize"),
@@ -54,3 +56,24 @@ def test_rejects_with_helpful_message(raw, message_part):
     with pytest.raises(DetectionError) as error:
         detect(raw)
     assert message_part in str(error.value)
+
+
+@pytest.mark.parametrize("raw, value", [
+    ("Volt Typhoon", "Volt Typhoon"),
+    ("  cozy   bear ", "cozy bear"),
+    ("LockBit 2.0", "LockBit 2.0"),
+    ("APT29", "APT29"),
+    ("mimikatz", "mimikatz"),
+    ("G1017", "G1017"),
+    ("T1059.001", "T1059.001"),
+    ("Operation Dream Job", "Operation Dream Job"),
+])
+def test_threat_names(raw, value):
+    indicator = detect(raw)
+    assert indicator.type == IndicatorType.THREAT and indicator.value == value
+
+
+def test_structured_indicators_still_win_over_names():
+    assert detect("evil.com").type == IndicatorType.DOMAIN
+    assert detect("CVE-2021-44228").type == IndicatorType.CVE
+    assert detect("deadbeef" * 8).type == IndicatorType.HASH

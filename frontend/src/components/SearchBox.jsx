@@ -3,7 +3,7 @@ import { api } from "../lib/api";
 import { typeName } from "../lib/format";
 import { navigate } from "../lib/router";
 
-const EXAMPLE = "CVE-2021-44228, 45.95.147.236, example.com, or a file hash";
+const EXAMPLE = "CVE-2021-44228, an IP, a domain, a file hash, or a threat like Volt Typhoon";
 
 export default function SearchBox({ autoFocus = false }) {
   const [query, setQuery] = useState("");
@@ -25,6 +25,10 @@ export default function SearchBox({ autoFocus = false }) {
     const timer = setTimeout(async () => {
       try {
         const indicator = await api.detect(text, controller.signal);
+        if (indicator.type === "threat") {
+          setHint({ kind: "ok", text: "Threat name: ThreatLens will look it up in MITRE ATT&CK" });
+          return;
+        }
         const parts = [typeName(indicator)];
         if (indicator.value.toLowerCase() !== text.toLowerCase()) parts.push(`will investigate ${indicator.value}`);
         if (indicator.refanged) parts.push("defanging removed");

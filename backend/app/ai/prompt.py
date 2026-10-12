@@ -24,6 +24,7 @@ Rules you must follow:
 6. Write for a busy security analyst: plain, specific, no marketing language, no filler.
 7. For a LOW or UNKNOWN verdict, don't invent threats. Explain what was checked and what the absence of evidence does and doesn't mean.
 8. Absence of evidence is not evidence of absence. If a source has no record of something, say exactly that ("NVD lists no exploit reference", "not in CISA KEV"). Never turn it into a claim about the world ("no exploit exists", "not exploited").
+9. If the verdict level is PROFILE, this describes a known threat, not a risk verdict about the reader's systems. Explain what it is, how it typically operates (its main tactics and techniques), and what defenders should check or prioritize, such as the defenses that cover most of its techniques. Never claim the reader is affected or targeted.
 
 Respond with a single JSON object and nothing else, in exactly this shape:
 {
@@ -60,10 +61,13 @@ def build_evidence(investigation: Investigation) -> tuple[dict, list[Citation]]:
                    if r.status not in (SourceStatus.OK, SourceStatus.NOT_FOUND)]
     verdict = investigation.verdict
     packet = {
+        # For a threat name, the notes only repeat how the user spelled it. Leaving them out means every
+        # spelling of the same threat shares one saved AI report instead of each costing a new AI call.
         "indicator": {"type": investigation.indicator.type.value, "value": investigation.indicator.value,
-                      "notes": investigation.indicator.notes},
-        "verdict": {"level": verdict.level, "score": verdict.score, "confidence": verdict.confidence,
-                    "headline": verdict.headline, "rules_applied": verdict.rules_applied},
+                      "notes": [] if investigation.indicator.type.value == "threat" else investigation.indicator.notes},
+        "verdict": ({"level": verdict.level, "headline": verdict.headline} if verdict.level == "PROFILE" else
+                    {"level": verdict.level, "score": verdict.score, "confidence": verdict.confidence,
+                     "headline": verdict.headline, "rules_applied": verdict.rules_applied}),
         "scoring_signals (source S0 unless stated)": [
             {"label": s.label, "points": s.points, "from": s.source, "evidence": s.evidence}
             for s in investigation.signals

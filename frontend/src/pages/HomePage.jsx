@@ -41,8 +41,9 @@ export default function HomePage() {
           <h1>ThreatLens</h1>
           <p className="tagline">See the threat before it sees you.</p>
           <p className="intro">
-            Enter a CVE, IP address, domain, or file hash. ThreatLens checks trusted intelligence sources,
-            scores the risk with a formula you can inspect, and explains what to do.
+            Enter a CVE, IP address, domain, file hash, or the name of a threat like Volt Typhoon. ThreatLens
+            checks trusted intelligence sources, scores the risk with a formula you can inspect, and explains
+            what to do.
           </p>
         </div>
       </section>

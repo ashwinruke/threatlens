@@ -9,12 +9,15 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.knowledge.models import ThreatLookup
+
 
 class IndicatorType(StrEnum):
     CVE = "cve"
     IP = "ip"
     DOMAIN = "domain"
     HASH = "hash"
+    THREAT = "threat"  # a named threat looked up in MITRE ATT&CK: group, malware, tool, campaign, technique
 
 
 class Indicator(BaseModel):
@@ -129,6 +132,7 @@ class Investigation(BaseModel):
     sources: list[SourceResult]
     trace: list[TraceStep]
     report: Report | None = None
+    threat: ThreatLookup | None = None  # only for threat names
     created_at: datetime
     duration_ms: int
 

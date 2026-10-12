@@ -1,7 +1,7 @@
 const STEPS = [
   {
     title: "Checks trusted sources",
-    text: "Up to five intelligence sources at once, including NVD, CISA KEV, EPSS, AbuseIPDB, VirusTotal, OTX and abuse.ch. A source that fails never stops the investigation.",
+    text: "Up to five intelligence sources at once, including NVD, CISA KEV, EPSS, AbuseIPDB, VirusTotal, OTX and abuse.ch. Threat names are looked up in MITRE ATT&CK. A source that fails never stops the investigation.",
   },
   {
     title: "Scores with a formula, not a guess",

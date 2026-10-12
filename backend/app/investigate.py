@@ -2,6 +2,7 @@
 
 Steps:
   1. Detect what the input is
+     (a threat name like "Volt Typhoon" takes a different path: see app/threats.py)
   2. Check known-good lists (and skip lookups for private addresses)
   3. Choose sources for this input type
   4. Ask every source at the same time (using cached answers when fresh)
@@ -17,10 +18,11 @@ from datetime import datetime, timedelta, timezone
 import httpx2
 
 from app import known_good as kg
+from app import threats
 from app.ai.report import write_report
 from app.config import Settings
 from app.detection import detect
-from app.models import Indicator, IndicatorType, Investigation, Report, SourceResult, SourceStatus
+from app.models import Indicator, IndicatorType, Investigation, Report, Signal, SourceResult, SourceStatus, Verdict
 from app.scoring import score_cve, score_ioc
 from app.sources import Source, run_source, sources_for
 from app.trace import Trace
@@ -65,9 +67,94 @@ async def investigate(query: str, settings: Settings, store, client: httpx2.Asyn
         indicator = detect(query)
         step.title = f"Identified the input as {_article(indicator.type)}" + (
             f" ({SUBTYPE_NAMES.get(indicator.subtype, indicator.subtype)})" if indicator.subtype else "")
-        step.reason = "Matched by pattern rules, not AI, so the result is predictable and explainable."
+        step.reason = ("Not a CVE, IP, domain, or hash, so ThreatLens treats it as the name of a known threat."
+                       if indicator.type == IndicatorType.THREAT else
+                       "Matched by pattern rules, not AI, so the result is predictable and explainable.")
         step.detail = {"value": indicator.value, "notes": indicator.notes}
 
+    threat = None
+    if indicator.type == IndicatorType.THREAT:
+        verdict, signals, results, threat = await _threat_steps(indicator, store, trace)
+    else:
+        verdict, signals, results = await _indicator_steps(indicator, settings, store, client, trace)
+
+    if threat and threat.status != "matched":
+        trace.add("verdict", "No profile, no risk score", reason=verdict.headline)
+    elif verdict.level == "PROFILE":
+        trace.add("verdict", "Threat profile, no risk score",
+                  reason="How dangerous a named threat is depends on whether it targets you, which ThreatLens "
+                         "can't know. So it shows what the threat does and how to defend against it, "
+                         "instead of inventing a number.")
+    else:
+        trace.add("verdict", f"{verdict.level} risk, score {verdict.score}/100, {verdict.confidence} confidence",
+                  reason=verdict.headline)
+
+    investigation = Investigation(
+        query=query, indicator=indicator, verdict=verdict, signals=signals, sources=results,
+        trace=trace.steps, created_at=created_at, duration_ms=0, threat=threat,
+    )
+
+    # 6. AI report: explains the verdict, never changes it
+    if threat and threat.status != "matched":
+        message = ("Pick one of the matches below to see its full profile and summary."
+                   if threat.status == "ambiguous" and threat.candidates else
+                   "There's nothing for the AI to explain, because no ATT&CK entry matched.")
+        investigation.report = Report(status="unavailable", message=message)
+        trace.add("report", "No AI summary needed", status="skipped", reason=message)
+    elif not write_ai_report and ai_skipped_message:
+        investigation.report = Report(status="unavailable", message=ai_skipped_message)
+        trace.add("report", "AI summary skipped", status="error", reason=ai_skipped_message)
+    elif write_ai_report:
+        report = await write_report(investigation, settings, client, store,
+                                    cache_only=ai_cache_only, unavailable_message=ai_skipped_message)
+        investigation.report = report
+        if report.status == "ready":
+            title = ("Reused the AI summary written for this same evidence" if report.cached
+                     else f"Wrote the AI summary with {report.provider} ({report.model})")
+            reason = "The AI explains the score; it didn't set it."
+            if report.removed_claims:
+                reason += f" Removed {report.removed_claims} statement(s) that didn't cite a real source."
+            trace.add("report", title, reason=reason, duration_ms=None if report.cached else report.duration_ms,
+                      detail={"attempts": report.attempts, "input_tokens": report.input_tokens,
+                              "output_tokens": report.output_tokens})
+        else:
+            trace.add("report", "AI summary unavailable", status="error", reason=report.message,
+                      detail={"attempts": report.attempts})
+
+    investigation.duration_ms = round((time.perf_counter() - started) * 1000)
+
+    # 7. Save (with every step so far, including the report step)
+    investigation.trace = list(trace.steps)
+    try:
+        await store.save(investigation)
+        trace.add("save", "Saved the investigation", detail={"id": investigation.id})
+    except Exception as exc:
+        trace.add("save", "Couldn't save the investigation", status="error", reason=type(exc).__name__)
+    investigation.trace = trace.steps
+    return investigation
+
+
+def _article(indicator_type: IndicatorType) -> str:
+    return {IndicatorType.CVE: "a CVE", IndicatorType.IP: "an IP address", IndicatorType.DOMAIN: "a domain",
+            IndicatorType.HASH: "a file hash", IndicatorType.THREAT: "a threat name"}[indicator_type]
+
+
+def _why_sources(indicator_type: IndicatorType) -> str:
+    return {
+        IndicatorType.CVE: "For a vulnerability: official details and severity (NVD), confirmed real-world "
+                           "exploitation (CISA KEV), and exploit likelihood (EPSS).",
+        IndicatorType.IP: "For an IP: community abuse reports (AbuseIPDB), vendor scanners (VirusTotal), "
+                          "threat reports (OTX), and malware infrastructure lists (ThreatFox, URLhaus).",
+        IndicatorType.DOMAIN: "For a domain: vendor scanners (VirusTotal), threat reports (OTX), and malware "
+                              "infrastructure lists (ThreatFox, URLhaus).",
+        IndicatorType.HASH: "For a file hash: vendor scanners (VirusTotal), a malware sample database "
+                            "(MalwareBazaar), threat reports (OTX), and malware IOC lists (ThreatFox).",
+    }[indicator_type]
+
+
+async def _indicator_steps(indicator: Indicator, settings: Settings, store, client: httpx2.AsyncClient,
+                           trace: Trace) -> tuple[Verdict, list[Signal], list[SourceResult]]:
+    """Steps 2 to 5 for a CVE, IP, domain, or hash."""
     # 2. Known-good checks
     good = None
     if indicator.type == IndicatorType.IP:
@@ -115,61 +202,34 @@ async def investigate(query: str, settings: Settings, store, client: httpx2.Asyn
         step.detail = {"signals": [{"label": s.label, "points": s.points, "source": s.source} for s in signals],
                        "rules_applied": verdict.rules_applied}
 
-    trace.add("verdict", f"{verdict.level} risk, score {verdict.score}/100, {verdict.confidence} confidence",
-              reason=verdict.headline)
-
-    investigation = Investigation(
-        query=query, indicator=indicator, verdict=verdict, signals=signals, sources=results,
-        trace=trace.steps, created_at=created_at, duration_ms=0,
-    )
-
-    # 6. AI report: explains the verdict, never changes it
-    if not write_ai_report and ai_skipped_message:
-        investigation.report = Report(status="unavailable", message=ai_skipped_message)
-        trace.add("report", "AI summary skipped", status="error", reason=ai_skipped_message)
-    elif write_ai_report:
-        report = await write_report(investigation, settings, client, store,
-                                    cache_only=ai_cache_only, unavailable_message=ai_skipped_message)
-        investigation.report = report
-        if report.status == "ready":
-            title = ("Reused the AI summary written for this same evidence" if report.cached
-                     else f"Wrote the AI summary with {report.provider} ({report.model})")
-            reason = "The AI explains the score; it didn't set it."
-            if report.removed_claims:
-                reason += f" Removed {report.removed_claims} statement(s) that didn't cite a real source."
-            trace.add("report", title, reason=reason, duration_ms=None if report.cached else report.duration_ms,
-                      detail={"attempts": report.attempts, "input_tokens": report.input_tokens,
-                              "output_tokens": report.output_tokens})
-        else:
-            trace.add("report", "AI summary unavailable", status="error", reason=report.message,
-                      detail={"attempts": report.attempts})
-
-    investigation.duration_ms = round((time.perf_counter() - started) * 1000)
-
-    # 7. Save (with every step so far, including the report step)
-    investigation.trace = list(trace.steps)
-    try:
-        await store.save(investigation)
-        trace.add("save", "Saved the investigation", detail={"id": investigation.id})
-    except Exception as exc:
-        trace.add("save", "Couldn't save the investigation", status="error", reason=type(exc).__name__)
-    investigation.trace = trace.steps
-    return investigation
+    return verdict, signals, results
 
 
-def _article(indicator_type: IndicatorType) -> str:
-    return {IndicatorType.CVE: "a CVE", IndicatorType.IP: "an IP address",
-            IndicatorType.DOMAIN: "a domain", IndicatorType.HASH: "a file hash"}[indicator_type]
+async def _threat_steps(indicator: Indicator, store, trace: Trace):
+    """Steps 2 to 5 for a threat name: search ATT&CK, pick a match, load its profile."""
+    with trace.timed("decide", f"Searched MITRE ATT&CK for \"{indicator.value}\"") as step:
+        lookup = await threats.look_up(indicator, store)
+        step.reason = "By ID, name, alias, similar spelling, and description, across groups, malware, tools, campaigns and techniques."
+        step.detail = {"candidates": [f"{c.external_id} {c.name} ({c.matched_on})" for c in lookup.candidates]}
 
-
-def _why_sources(indicator_type: IndicatorType) -> str:
-    return {
-        IndicatorType.CVE: "For a vulnerability: official details and severity (NVD), confirmed real-world "
-                           "exploitation (CISA KEV), and exploit likelihood (EPSS).",
-        IndicatorType.IP: "For an IP: community abuse reports (AbuseIPDB), vendor scanners (VirusTotal), "
-                          "threat reports (OTX), and malware infrastructure lists (ThreatFox, URLhaus).",
-        IndicatorType.DOMAIN: "For a domain: vendor scanners (VirusTotal), threat reports (OTX), and malware "
-                              "infrastructure lists (ThreatFox, URLhaus).",
-        IndicatorType.HASH: "For a file hash: vendor scanners (VirusTotal), a malware sample database "
-                            "(MalwareBazaar), threat reports (OTX), and malware IOC lists (ThreatFox).",
-    }[indicator_type]
+    results: list[SourceResult] = []
+    if lookup.status == "matched":
+        entity = lookup.profile.entity
+        trace.add("decide", f"Matched {entity.name} ({entity.external_id}) by {lookup.matched_on}",
+                  reason=("An exact match." if not lookup.matched_on.startswith("similar") else
+                          "The closest match, clearly ahead of the others. Other close matches are listed in case it's wrong."))
+        indicator.notes.append(f"You searched for \"{indicator.value}\"; matched {entity.name} by {lookup.matched_on}.")
+        indicator.value, indicator.subtype = entity.name, entity.kind
+        results = [threats.as_source(lookup)]
+        trace.add("fetch", "MITRE ATT&CK found data", detail={"link": entity.url, "cached": False},
+                  reason=f"Profile of {entity.name}: {len(lookup.profile.techniques)} techniques, "
+                         f"{len(lookup.profile.mitigations)} ranked defenses.")
+    elif lookup.status == "ambiguous":
+        trace.add("decide", "Several entries could match", status="skipped",
+                  reason="None is clearly ahead, so ThreatLens asks instead of guessing.")
+    elif lookup.status == "not_found":
+        trace.add("decide", "No ATT&CK entry matched", status="skipped")
+    else:
+        trace.add("decide", "Knowledge base unavailable", status="error",
+                  reason="Threat names are looked up in the database, which isn't connected.")
+    return threats.verdict_for(lookup), [], results, lookup

@@ -14,7 +14,9 @@ export default function Examples({ items }) {
             <Link to={`/i/${item.investigation_id}`} className={`example lvl-${item.level}`}>
               <span className="example__head">
                 <span className="example__label">{item.label}</span>
-                <span className="example__score">{item.level === "UNKNOWN" ? "?" : item.score}</span>
+                <span className="example__score">
+                  {item.level === "UNKNOWN" ? "?" : item.level === "PROFILE" ? "ATT&CK" : item.score}
+                </span>
               </span>
               <span className="example__value">{item.indicator_value}</span>
               <span className="example__note">{item.note}</span>

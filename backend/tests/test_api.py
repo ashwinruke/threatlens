@@ -24,7 +24,7 @@ def test_detect_endpoint(client):
 
 
 def test_detect_rejects_gibberish(client):
-    response = client.post("/api/detect", json={"query": "not a thing"})
+    response = client.post("/api/detect", json={"query": "8.8.8.8 1.1.1.1"})
     assert response.status_code == 422
     assert "more than one" in response.json()["detail"]
 

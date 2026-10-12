@@ -1,15 +1,28 @@
-export const LEVELS = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"];
+export const LEVELS = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN", "PROFILE"];
 
 export const TYPE_NAMES = {
   cve: "Vulnerability (CVE)",
   ip: "IP address",
   domain: "Domain",
   hash: "File hash",
+  threat: "Threat name",
+};
+
+// What a threat name turned out to be, in ATT&CK terms
+export const THREAT_KIND_NAMES = {
+  group: "Threat group",
+  malware: "Malware",
+  tool: "Tool",
+  campaign: "Campaign",
+  technique: "Attack technique",
+  tactic: "Tactic",
+  mitigation: "Mitigation",
 };
 
 export const SUBTYPE_NAMES = { ipv4: "IPv4", ipv6: "IPv6", md5: "MD5", sha1: "SHA-1", sha256: "SHA-256" };
 
 export function typeName(indicator) {
+  if (indicator.type === "threat") return THREAT_KIND_NAMES[indicator.subtype] || TYPE_NAMES.threat;
   const sub = indicator.subtype ? SUBTYPE_NAMES[indicator.subtype] || indicator.subtype : null;
   return TYPE_NAMES[indicator.type] + (sub ? ` (${sub})` : "");
 }

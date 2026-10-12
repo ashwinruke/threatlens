@@ -3,8 +3,14 @@ import asyncio
 
 from psycopg.types.json import Jsonb
 
-from app.knowledge.models import (Entity, EntitySummary, EntityView, KnowledgeStats, Redirect, RelatedGroup,
-                                  Relationship)
+from app.knowledge.models import (Entity, EntitySummary, EntityView, KnowledgeStats, MitigationCoverage, Redirect,
+                                  RelatedGroup, Relationship, TacticCount, TechniqueRef, ThreatProfile)
+
+MAX_MITIGATIONS = 8
+# ATT&CK entries that are categories rather than specific defenses, so they aren't ranked:
+# M1055 "Do Not Mitigate" (explicitly not a defense) and M1056 "Pre-compromise" (a broad bucket
+# for attacker-side reconnaissance that names no concrete control).
+NOT_SPECIFIC_DEFENSES = ["M1055", "M1056"]
 
 # How each connection is described from the point of view of the entity being viewed.
 # (direction, relationship type, kind of the other entity) -> label
@@ -141,6 +147,53 @@ class KnowledgeRepository:
             return None
         row, links, redirected_from = result
         return EntityView(entity=_entity(row), related=_group(links), redirected_from=redirected_from)
+
+
+    async def profile(self, external_id: str) -> ThreatProfile | None:
+        """Everything a defender needs about one threat, built on top of view().
+
+        For a group, malware, tool or campaign this adds:
+        - its techniques with their tactics, and how many fall under each tactic
+        - mitigations ranked by how many of its techniques they help against
+        Only techniques ATT&CK links to this entry directly are counted (not those of the
+        malware it uses), which matches how MITRE's own pages present it.
+        """
+        view = await self.view(external_id)
+        if not view:
+            return None
+        entity_id = view.entity.id
+
+        def run():
+            with self.store.connection() as conn:
+                techniques = conn.execute(
+                    "SELECT DISTINCT e.external_id, e.name, e.url, e.details -> 'tactics' AS tactics "
+                    "FROM relationships r JOIN entities e ON e.id = r.target_id "
+                    "WHERE r.source_id = %s AND r.type = 'uses' AND e.kind = 'technique' ORDER BY e.external_id",
+                    (entity_id,),
+                ).fetchall()
+                mitigations = conn.execute(
+                    "SELECT m.external_id, m.name, m.url, count(DISTINCT used.target_id) AS covers "
+                    "FROM relationships used "
+                    "JOIN relationships mit ON mit.target_id = used.target_id AND mit.type = 'mitigates' "
+                    "JOIN entities m ON m.id = mit.source_id "
+                    "WHERE used.source_id = %s AND used.type = 'uses' AND NOT (m.external_id = ANY(%s)) "
+                    "GROUP BY m.external_id, m.name, m.url ORDER BY covers DESC, m.external_id LIMIT %s",
+                    (entity_id, NOT_SPECIFIC_DEFENSES, MAX_MITIGATIONS),
+                ).fetchall()
+                return techniques, mitigations
+
+        techniques, mitigations = await asyncio.to_thread(run)
+        refs = [TechniqueRef(external_id=t["external_id"], name=t["name"], url=t["url"],
+                             tactics=[x["name"] for x in (t["tactics"] or [])]) for t in techniques]
+        counts: dict[str, int] = {}
+        for ref in refs:
+            for tactic in ref.tactics:
+                counts[tactic] = counts.get(tactic, 0) + 1
+        return ThreatProfile(
+            entity=view.entity, related=view.related, techniques=refs,
+            tactics=[TacticCount(name=n, count=c) for n, c in sorted(counts.items(), key=lambda x: (-x[1], x[0]))],
+            mitigations=[MitigationCoverage(**m) for m in mitigations],
+        )
 
 
 def _entity(row: dict) -> Entity:
