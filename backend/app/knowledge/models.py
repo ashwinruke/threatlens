@@ -71,6 +71,16 @@ class EntityView(BaseModel):
     redirected_from: str | None = None
 
 
+class SearchResult(BaseModel):
+    external_id: str | None
+    name: str
+    kind: str
+    url: str | None
+    snippet: str  # first sentence of the description
+    matched_on: str  # why it matched, e.g. "alias: Cozy Bear" or "description"
+    score: float
+
+
 class KnowledgeStats(BaseModel):
     source: str
     version: str | None

@@ -143,3 +143,64 @@ def test_api_explains_when_there_is_no_database():
         main.app.state.store = MemoryStore()
         response = client.get("/api/knowledge/entities/G1017")
         assert response.status_code == 503 and "needs the database" in response.json()["detail"]
+
+
+# ---------------------------------------------------------------- search
+
+from app.knowledge.search import first_sentence, score  # noqa: E402
+
+
+def row(**values):
+    base = {"exact_id": False, "exact_name": False, "exact_alias": None, "name_similarity": 0.0,
+            "alias_similarity": 0.0, "best_alias": None, "has_all_words": False, "text_rank": 0.0}
+    return {**base, **values}
+
+
+def test_exact_matches_always_outrank_partial_ones():
+    best_partial, _ = score(row(name_similarity=1.0, alias_similarity=1.0, has_all_words=True, text_rank=1.0))
+    exact_alias, reason = score(row(exact_alias="Cozy Bear"))
+    assert exact_alias > best_partial and reason == "alias: Cozy Bear"
+    assert score(row(exact_name=True))[0] > exact_alias
+    assert score(row(exact_id=True))[0] > score(row(exact_name=True, text_rank=1.0, has_all_words=True))[0]
+
+
+def test_match_reasons():
+    assert score(row(name_similarity=0.8))[1] == "similar name"
+    assert score(row(alias_similarity=0.9, best_alias="WanaCry"))[1] == "similar alias: WanaCry"
+    assert score(row(text_rank=0.5, has_all_words=True))[1] == "description"
+    assert score(row(text_rank=0.5))[1] == "some description words"
+
+
+def test_first_sentence():
+    assert first_sentence("One. Two.") == "One."
+    assert first_sentence("no full stop here") == "no full stop here"
+    long = "word " * 100
+    assert first_sentence(long).endswith("…") and len(first_sentence(long)) <= 220
+
+
+def run_search(repo, query, **kwargs):
+    from app.knowledge.search import search
+    return asyncio.run(search(repo.store, query, **kwargs))
+
+
+@needs_db
+@pytest.mark.parametrize("query, expected, reason", [
+    ("G1017", "G1017", "ID"),
+    ("volt typhoon", "G1017", "name"),
+    ("Vanguard Panda", "G1017", "alias: Vanguard Panda"),
+    ("volt typhon", "G1017", "similar name"),
+    ("mimikatz", "S0002", "name"),
+    ("lsass", "T1003.001", "similar name"),
+    ("KV Botnet", "C0035", "similar name"),
+])
+def test_search_finds_the_right_entry(repo, query, expected, reason):
+    results = run_search(repo, query)
+    assert results[0].external_id == expected and results[0].matched_on == reason
+
+
+@needs_db
+def test_search_kind_filter_and_limits(repo):
+    assert {r.kind for r in run_search(repo, "credential", kinds=["technique"])} == {"technique"}
+    assert run_search(repo, "   ") == []
+    assert len(run_search(repo, "a", limit=1)) <= 1
+    assert run_search(repo, "zzzzqqqq") == []

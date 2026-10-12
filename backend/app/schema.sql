@@ -104,3 +104,28 @@ CREATE TABLE IF NOT EXISTS knowledge_imports (
     imported_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     counts          JSONB NOT NULL DEFAULT '{}'
 );
+
+-- ---------------------------------------------------------------------------
+-- Knowledge search (Phase 2, step 2)
+-- ---------------------------------------------------------------------------
+
+-- Similar-spelling matches, for typos and partial names ("mimikats", "cobalt")
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- The searchable text of an entity. Weights: A = ID and name, B = aliases, C = description.
+-- Names are indexed twice: as typed ('simple') and with English word stems ('english'),
+-- so "Credential Dumping" matches "credential dumps" but "Emotet" isn't stemmed oddly.
+CREATE OR REPLACE FUNCTION threatlens_entity_search(name text, aliases text[], external_id text, description text)
+RETURNS tsvector LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT setweight(to_tsvector('simple', coalesce(external_id, '')), 'A')
+        || setweight(to_tsvector('simple', coalesce(name, '')), 'A')
+        || setweight(to_tsvector('english', coalesce(name, '')), 'A')
+        || setweight(to_tsvector('simple', array_to_string(coalesce(aliases, '{}'), ' ')), 'B')
+        || setweight(to_tsvector('english', coalesce(description, '')), 'C')
+$$;
+
+-- Kept up to date by PostgreSQL itself whenever an entity changes
+ALTER TABLE entities ADD COLUMN IF NOT EXISTS search tsvector
+    GENERATED ALWAYS AS (threatlens_entity_search(name, aliases, external_id, description)) STORED;
+CREATE INDEX IF NOT EXISTS entities_search_idx ON entities USING gin (search);
+CREATE INDEX IF NOT EXISTS entities_name_trgm_idx ON entities USING gin (lower(name) gin_trgm_ops);
