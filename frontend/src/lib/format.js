@@ -72,6 +72,7 @@ export const STEP_KIND_TEXT = {
   fetch: "Look up",
   score: "Score",
   verdict: "Verdict",
+  research: "Research",
   report: "Explain",
   save: "Save",
 };

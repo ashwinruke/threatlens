@@ -20,6 +20,7 @@ def test_settings(**overrides) -> Settings:
         nvd_api_key="k", abuseipdb_api_key="k", otx_api_key="k", virustotal_api_key="k",
         abusech_auth_key="k", database_url="", source_timeout_seconds=5,
         gemini_model="gemini-3-flash-preview", ai_provider_order="gemini,groq",
+        research_enabled=False,  # the research agent has its own tests (test_agent.py)
     )
     values.update(overrides)
     return Settings(_env_file=None, **values)

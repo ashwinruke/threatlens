@@ -23,6 +23,10 @@ CASES = [
     ("emotet", "S0367", "exact"),
     ("Operation North Star", "C0022", "exact"),
     ("credential access", "TA0006", "exact"),
+    ("AgentTesla", "S0331", "exact"),  # how ThreatFox and MalwareBazaar write family names
+    ("CobaltStrike", "S0154", "exact"),
+    ("win.cobalt_strike", "S0154", "exact"),  # Malpedia style
+    ("RedLineStealer", "S1240", "exact"),
     ("mimikats", "S0002", "typo"),
     ("volt typhon", "G1017", "typo"),
     ("wanacry", "S0366", "typo"),

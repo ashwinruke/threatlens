@@ -1,7 +1,8 @@
 """Finds knowledge entries by ID, name, alias, similar spelling, or description words.
 
 Three signals, because each catches what the others miss:
-  1. Exact match on an ID, name, or alias   ("G1017", "APT29", "Cozy Bear")
+  1. Exact match on an ID, name, or alias   ("G1017", "APT29", "Cozy Bear"), also ignoring spaces and
+     punctuation, because feeds write names like "AgentTesla" or "win.cobalt_strike"
   2. Similar spelling (PostgreSQL trigrams)  ("mimikats", "cobalt", "volt typhon")
   3. Full-text search of the descriptions    ("lsass dumping", "scheduled task persistence")
 
@@ -27,6 +28,9 @@ scored AS (
     SELECT e.external_id, e.name, e.kind, e.url, e.description,
            upper(coalesce(e.external_id, '')) = upper(q.raw) AS exact_id,
            lower(e.name) = q.low AS exact_name,
+           regexp_replace(lower(e.name), '[^a-z0-9]', '', 'g') = %(compact)s AS compact_name,
+           EXISTS (SELECT 1 FROM unnest(e.aliases) a
+                   WHERE regexp_replace(lower(a), '[^a-z0-9]', '', 'g') = %(compact)s) AS compact_alias,
            (SELECT a FROM unnest(e.aliases) a WHERE lower(a) = q.low LIMIT 1) AS exact_alias,
            greatest(similarity(lower(e.name), q.low), word_similarity(q.low, lower(e.name))) AS name_similarity,
            (SELECT a FROM unnest(e.aliases) a
@@ -39,9 +43,9 @@ scored AS (
     WHERE (%(kinds)s::text[] IS NULL OR e.kind = ANY(%(kinds)s::text[]))
 )
 SELECT * FROM scored
-WHERE exact_id OR exact_name OR exact_alias IS NOT NULL
+WHERE exact_id OR exact_name OR exact_alias IS NOT NULL OR compact_name OR compact_alias
    OR name_similarity > 0.45 OR alias_similarity > 0.45 OR text_rank > 0
-ORDER BY exact_id DESC, (exact_name OR exact_alias IS NOT NULL) DESC,
+ORDER BY exact_id DESC, (exact_name OR exact_alias IS NOT NULL OR compact_name OR compact_alias) DESC,
          greatest(name_similarity, alias_similarity) DESC, text_rank DESC
 LIMIT 200
 """
@@ -49,6 +53,19 @@ LIMIT 200
 
 def normalize_query(text: str) -> str:
     return " ".join(text.split())[:200]
+
+
+# Malpedia-style family names start with a platform, e.g. "win.cobalt_strike", "elf.mirai"
+PLATFORM_PREFIX = re.compile(r"^(?:win|elf|osx|apk|jar|js|ps1|py|vbs|php|asp)\.", re.IGNORECASE)
+
+
+def compact(text: str) -> str | None:
+    """Lowercase letters and digits only: "Agent Tesla", "AgentTesla" and "win.agent_tesla" all become "agenttesla".
+
+    Too short to be meaningful? Returns None, so "--" doesn't match every entry without letters.
+    """
+    letters = re.sub(r"[^a-z0-9]", "", PLATFORM_PREFIX.sub("", text.strip()).lower())
+    return letters if len(letters) >= 3 else None
 
 
 def score(row: dict) -> tuple[float, str]:
@@ -65,6 +82,10 @@ def score(row: dict) -> tuple[float, str]:
         return round(200 + text * 10, 2), "name"
     if row["exact_alias"]:
         return round(190 + text * 10, 2), f"alias: {row['exact_alias']}"
+    if row.get("compact_name"):
+        return round(195 + text * 10, 2), "name, ignoring spaces"
+    if row.get("compact_alias"):
+        return round(190 + text * 5, 2), "alias, ignoring spaces"
 
     spelling = max(row["name_similarity"], row["alias_similarity"] * 0.95)
     total = spelling * 60 + text * 40 + (5 if row["has_all_words"] else 0)
@@ -95,7 +116,7 @@ async def search(store, query: str, kinds: list[str] | None = None, limit: int =
 
     def run():
         with store.connection() as conn:
-            return conn.execute(CANDIDATES_SQL, {"q": query, "kinds": kinds}).fetchall()
+            return conn.execute(CANDIDATES_SQL, {"q": query, "kinds": kinds, "compact": compact(query)}).fetchall()
 
     rows = await asyncio.to_thread(run)
     results = []

@@ -164,6 +164,14 @@ def test_exact_matches_always_outrank_partial_ones():
     assert score(row(exact_id=True))[0] > score(row(exact_name=True, text_rank=1.0, has_all_words=True))[0]
 
 
+def test_names_ignoring_spaces_count_as_exact():
+    assert score(row(compact_name=True)) == (195.0, "name, ignoring spaces")
+    assert score(row(compact_alias=True))[0] >= 190
+    from app.knowledge.search import compact
+    assert compact("Agent Tesla") == compact("AgentTesla") == compact("win.agent_tesla") == "agenttesla"
+    assert compact("--") is None and compact("ab") is None
+
+
 def test_match_reasons():
     assert score(row(name_similarity=0.8))[1] == "similar name"
     assert score(row(alias_similarity=0.9, best_alias="WanaCry"))[1] == "similar alias: WanaCry"

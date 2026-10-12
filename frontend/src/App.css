@@ -385,6 +385,32 @@ a.cite:hover { background: var(--amber); color: var(--ink); }
 .tactic[open] { grid-column: 1 / -1; }
 .tactic[open] .technique-list { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); column-gap: 24px; }
 
+/* ---------- Research agent ---------- */
+.research { margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--line); }
+.research h2 { font-size: 1.2rem; font-weight: 700; margin-bottom: 6px; }
+.research__intro { font-size: 0.9rem; max-width: 44em; }
+.research__leads { margin-top: 12px; font-size: 0.88rem; color: var(--muted); }
+.research__leads summary { cursor: pointer; }
+.research__leads summary:hover { color: var(--text); }
+.research__steps { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 14px; }
+.rstep { display: grid; grid-template-columns: 34px 1fr; gap: 12px; }
+.rstep__id {
+  width: 34px; height: 26px; border-radius: var(--radius-sm); display: grid; place-items: center;
+  font-family: var(--font-data); font-size: 0.78rem; font-weight: 500;
+  color: var(--ink); background: var(--amber);
+}
+.rstep--empty .rstep__id { background: var(--line); color: var(--muted); }
+.rstep__title { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.rstep__tool { font-weight: 700; }
+.rstep__title code { color: var(--muted); }
+.rstep__why { color: var(--muted); font-size: 0.88rem; font-style: italic; margin-top: 2px; }
+.rstep__found { font-size: 0.92rem; margin-top: 4px; }
+.rstep--empty .rstep__found { color: var(--muted); }
+.research__end {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px;
+  margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--line); font-size: 0.86rem;
+}
+
 /* ---------- Small screens ---------- */
 @media (max-width: 860px) {
   .report-grid { grid-template-columns: 1fr; }

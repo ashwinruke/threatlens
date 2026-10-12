@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "ThreatLens API"
-    app_version: str = "0.7.0"
+    app_version: str = "0.8.0"
     app_env: str = "development"
 
     database_url: str = ""
@@ -33,6 +33,15 @@ class Settings(BaseSettings):
     ai_provider_order: str = "groq,gemini"
     ai_timeout_seconds: float = 45.0
     ai_report_cache_hours: int = 6
+
+    # Research agent: explores leads after the investigation (never changes the score)
+    research_enabled: bool = True
+    agent_groq_model: str = "openai/gpt-oss-20b"  # a different model from the report writer: its own free quota
+    agent_gemini_model: str = ""  # empty means the same as GEMINI_MODEL
+    agent_max_steps: int = 3  # tool calls (and so AI decisions) per investigation
+    agent_max_lookups: int = 1  # extra indicator investigations, which use the source APIs' quotas
+    agent_timeout_seconds: float = 60.0
+    daily_research_cap: int = 30
 
     # Limits that protect the free tiers on a public demo
     investigations_per_hour_per_visitor: int = 10

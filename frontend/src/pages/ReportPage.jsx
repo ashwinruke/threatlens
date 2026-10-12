@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import AiSummary from "../components/AiSummary";
+import Research from "../components/Research";
 import Lens from "../components/Lens";
 import ScoreLedger from "../components/ScoreLedger";
 import SourceList from "../components/SourceList";
@@ -120,6 +121,7 @@ export default function ReportPage({ id }) {
         <div className="report-grid">
           <div className="report-grid__main">
             <AiSummary report={data.report} />
+            <Research run={data.research} />
           </div>
           <aside className="report-grid__side">
             {profile ? (

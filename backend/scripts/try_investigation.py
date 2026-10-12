@@ -44,6 +44,18 @@ async def main(query: str) -> None:
     for rule in v.rules_applied:
         print(f"  rule: {rule}")
 
+    run = result.research
+    if run and run.steps:
+        print(f"\nRESEARCH ({run.status}: {run.reason})")
+        for step in run.steps:
+            print(f"  {step.id} {step.tool}({step.input}) {'found' if step.ok else 'nothing'}")
+            print(f"     why: {step.why}")
+            print(f"     {step.summary}")
+        cost = "reused" if run.cached else f"{run.ai_calls} AI calls, {run.provider} {run.model}, {run.input_tokens + run.output_tokens} tokens"
+        print(f"  ({cost})")
+    elif run:
+        print(f"\nRESEARCH {run.status}: {run.reason}")
+
     report = result.report
     if report and report.status == "ready":
         print(f"\nAI SUMMARY ({report.provider} {report.model}{', reused' if report.cached else ''})")

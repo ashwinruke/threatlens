@@ -35,8 +35,9 @@ class Completion:
 class Provider:
     name = ""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, model: str | None = None) -> None:
         self.settings = settings
+        self._model = model  # overrides the configured model, e.g. a smaller one for the research agent
 
     @property
     def model(self) -> str:
@@ -80,10 +81,10 @@ class GeminiProvider(Provider):
 
     @property
     def model(self) -> str:
-        return self.settings.gemini_model
+        return self._model or self.settings.gemini_model
 
     def is_configured(self) -> bool:
-        return bool(self.settings.gemini_api_key and self.settings.gemini_model)
+        return bool(self.settings.gemini_api_key and self.model)
 
     async def complete(self, system: str, user: str, client: httpx2.AsyncClient) -> Completion:
         response = await client.post(
@@ -115,10 +116,10 @@ class GroqProvider(Provider):
 
     @property
     def model(self) -> str:
-        return self.settings.groq_model
+        return self._model or self.settings.groq_model
 
     def is_configured(self) -> bool:
-        return bool(self.settings.groq_api_key and self.settings.groq_model)
+        return bool(self.settings.groq_api_key and self.model)
 
     async def complete(self, system: str, user: str, client: httpx2.AsyncClient) -> Completion:
         response = await client.post(
@@ -143,7 +144,7 @@ class GroqProvider(Provider):
         return Completion(text, usage.get("prompt_tokens"), usage.get("completion_tokens"))
 
 
-def providers_in_order(settings: Settings) -> list[Provider]:
+def providers_in_order(settings: Settings, models: dict[str, str] | None = None) -> list[Provider]:
     """Providers in the order set by AI_PROVIDER_ORDER (unknown names are ignored)."""
     by_name = {"gemini": GeminiProvider, "groq": GroqProvider}
     chosen = [by_name[n] for n in
@@ -152,4 +153,6 @@ def providers_in_order(settings: Settings) -> list[Provider]:
     for cls in by_name.values():  # anything left out still acts as a last resort
         if cls not in chosen:
             chosen.append(cls)
-    return [cls(settings) for cls in chosen]
+    models = models or {}
+    names = {GeminiProvider: "gemini", GroqProvider: "groq"}
+    return [cls(settings, models.get(names[cls]) or None) for cls in chosen]

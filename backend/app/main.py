@@ -123,11 +123,13 @@ async def create_investigation(body: InvestigateRequest, request: Request):
         )
     ai_used_today = await store.count_today("ai_reports", add=0)
     ai_allowed = ai_used_today < settings.daily_ai_report_cap
+    research_allowed = await store.count_today("research_runs", add=0) < settings.daily_research_cap
 
     try:
         result = await investigate(
             body.query, settings, store, request.app.state.http,
             ai_cache_only=not ai_allowed,
+            research_allowed=research_allowed,
             ai_skipped_message=("The daily AI summary limit for this free demo has been reached. "
                                 "The score, evidence, and decision trail below are unaffected."),
         )
@@ -136,6 +138,8 @@ async def create_investigation(body: InvestigateRequest, request: Request):
 
     if result.report and result.report.status == "ready" and not result.report.cached:
         await store.count_today("ai_reports")
+    if result.research and result.research.ai_calls and not result.research.cached:
+        await store.count_today("research_runs")
     return result
 
 

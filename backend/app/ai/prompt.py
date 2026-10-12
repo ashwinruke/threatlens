@@ -25,6 +25,7 @@ Rules you must follow:
 7. For a LOW or UNKNOWN verdict, don't invent threats. Explain what was checked and what the absence of evidence does and doesn't mean.
 8. Absence of evidence is not evidence of absence. If a source has no record of something, say exactly that ("NVD lists no exploit reference", "not in CISA KEV"). Never turn it into a claim about the world ("no exploit exists", "not exploited").
 9. If the verdict level is PROFILE, this describes a known threat, not a risk verdict about the reader's systems. Explain what it is, how it typically operates (its main tactics and techniques), and what defenders should check or prioritize, such as the defenses that cover most of its techniques. Never claim the reader is affected or targeted.
+10. Sources named "ThreatLens research" are follow-up lookups made after scoring: who is connected, what else is related. Cite them like any other source, but never use them to change, question, or re-argue the verdict.
 
 Respond with a single JSON object and nothing else, in exactly this shape:
 {
@@ -56,6 +57,15 @@ def build_evidence(investigation: Investigation) -> tuple[dict, list[Citation]]:
         else:
             entry["result"] = "No record of this indicator."
         sources.append(entry)
+
+    # Follow-up lookups by the research agent: citable like any source
+    research = investigation.research
+    for step in (research.steps if research else []):
+        if not step.ok:
+            continue
+        cid = f"S{len(citations)}"
+        citations.append(Citation(id=cid, source=f"Research {step.id}: {step.title}", link=step.link))
+        sources.append({"id": cid, "source": "ThreatLens research", "step": step.title, "facts": step.data})
 
     unavailable = [f"{r.source}: {r.status.value}" for r in investigation.sources
                    if r.status not in (SourceStatus.OK, SourceStatus.NOT_FOUND)]

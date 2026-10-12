@@ -7,8 +7,9 @@ Steps:
   3. Choose sources for this input type
   4. Ask every source at the same time (using cached answers when fresh)
   5. Score the risk from the evidence
-  6. Ask the AI to explain the result (Gemini, then Groq as backup)
-  7. Save the result
+  6. Research: an AI agent follows up the leads with read-only tools (never changes the score)
+  7. Ask the AI to explain the result, citing the sources and the research
+  8. Save the result
 """
 import asyncio
 import logging
@@ -19,6 +20,7 @@ import httpx2
 
 from app import known_good as kg
 from app import threats
+from app.agent.runner import research
 from app.ai.report import write_report
 from app.config import Settings
 from app.detection import detect
@@ -56,7 +58,7 @@ async def _lookup_with_cache(source: Source, indicator: Indicator, client: httpx
 
 async def investigate(query: str, settings: Settings, store, client: httpx2.AsyncClient,
                       write_ai_report: bool = True, ai_cache_only: bool = False,
-                      ai_skipped_message: str | None = None) -> Investigation:
+                      ai_skipped_message: str | None = None, research_allowed: bool = True) -> Investigation:
     """Raises DetectionError (with a friendly message) if the input isn't understood."""
     started = time.perf_counter()
     created_at = datetime.now(timezone.utc)
@@ -94,7 +96,17 @@ async def investigate(query: str, settings: Settings, store, client: httpx2.Asyn
         trace=trace.steps, created_at=created_at, duration_ms=0, threat=threat,
     )
 
-    # 6. AI report: explains the verdict, never changes it
+    # 6. Research agent: follows the leads, within a strict budget
+    if write_ai_report and settings.research_enabled:
+        async def run_indicator(related: Indicator):
+            # A related indicator gets the normal source checks, without its own AI report or saved record
+            return await _indicator_steps(related, settings, store, client, Trace())
+
+        investigation.research = await research(investigation, settings, store, client, run_indicator,
+                                                allowed=research_allowed and not ai_cache_only)
+        _trace_research(trace, investigation.research)
+
+    # 7. AI report: explains the verdict, never changes it
     if threat and threat.status != "matched":
         message = ("Pick one of the matches below to see its full profile and summary."
                    if threat.status == "ambiguous" and threat.candidates else
@@ -123,7 +135,7 @@ async def investigate(query: str, settings: Settings, store, client: httpx2.Asyn
 
     investigation.duration_ms = round((time.perf_counter() - started) * 1000)
 
-    # 7. Save (with every step so far, including the report step)
+    # 8. Save (with every step so far, including the report step)
     investigation.trace = list(trace.steps)
     try:
         await store.save(investigation)
@@ -132,6 +144,24 @@ async def investigate(query: str, settings: Settings, store, client: httpx2.Asyn
         trace.add("save", "Couldn't save the investigation", status="error", reason=type(exc).__name__)
     investigation.trace = trace.steps
     return investigation
+
+
+def _trace_research(trace: Trace, run) -> None:
+    if not run.steps:
+        title = {"skipped": "No further research", "unavailable": "Research unavailable"}.get(run.status, "No research steps")
+        trace.add("research", title, status="skipped" if run.status == "skipped" else "error", reason=run.reason)
+        return
+    for step in run.steps:
+        trace.add("research", f"{step.id}: {step.title}", status="ok" if step.ok else "skipped",
+                  reason=f"Why: {step.why} Found: {step.summary}",
+                  duration_ms=None if run.cached else step.duration_ms, detail={"link": step.link})
+    cost = (f"Reused saved research for this same evidence." if run.cached else
+            f"{run.ai_calls} AI decision(s) with {run.provider} ({run.model}), "
+            f"{run.input_tokens + run.output_tokens} tokens.")
+    trace.add("research", "Research finished" if run.status == "done" else "Research stopped",
+              status="ok" if run.status == "done" else "error",
+              reason=f"{run.reason} {cost} Research never changes the score.",
+              detail={"ai_calls": run.ai_calls, "tokens": run.input_tokens + run.output_tokens})
 
 
 def _article(indicator_type: IndicatorType) -> str:

@@ -39,14 +39,19 @@ class _Draft(BaseModel):
     gaps: list[str] = Field(default_factory=list)
 
 
-def _parse(text: str) -> _Draft:
+def _parse_json_object(text: str) -> dict:
+    """The JSON object in a model's answer, even if wrapped in ``` fences or extra words."""
     cleaned = text.strip()
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned)
     start, end = cleaned.find("{"), cleaned.rfind("}")
     if start == -1 or end == -1:
         raise ValueError("no JSON object in the answer")
-    return _Draft.model_validate(json.loads(cleaned[start:end + 1]))
+    return json.loads(cleaned[start:end + 1])
+
+
+def _parse(text: str) -> _Draft:
+    return _Draft.model_validate(_parse_json_object(text))
 
 
 def _clean_text(text: str, limit: int = MAX_TEXT) -> str:

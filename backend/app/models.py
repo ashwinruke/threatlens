@@ -123,6 +123,35 @@ class Report(BaseModel):
     message: str | None = None  # why it's unavailable
 
 
+class ResearchStep(BaseModel):
+    """One thing the research agent chose to look up, why, and what it found."""
+
+    id: str  # "R1", "R2", ...
+    tool: str  # search_attack, attack_profile, attack_mentions, investigate_indicator
+    input: str
+    why: str  # the agent's own reason, in its words
+    ok: bool
+    title: str  # plain description, e.g. "Opened the ATT&CK profile of APT29"
+    summary: str  # one line: what came back
+    data: dict[str, Any] = Field(default_factory=dict)  # compact result, passed to the report writer
+    link: str | None = None
+    duration_ms: int | None = None
+
+
+class ResearchRun(BaseModel):
+    status: Literal["done", "stopped", "skipped", "unavailable"]
+    reason: str = ""  # why it finished, stopped, or was skipped
+    leads: list[str] = Field(default_factory=list)  # what the agent was given to follow up
+    steps: list[ResearchStep] = Field(default_factory=list)
+    provider: str | None = None
+    model: str | None = None
+    ai_calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    duration_ms: int | None = None
+    cached: bool = False
+
+
 class Investigation(BaseModel):
     id: str | None = None
     query: str
@@ -133,6 +162,7 @@ class Investigation(BaseModel):
     trace: list[TraceStep]
     report: Report | None = None
     threat: ThreatLookup | None = None  # only for threat names
+    research: ResearchRun | None = None
     created_at: datetime
     duration_ms: int
 

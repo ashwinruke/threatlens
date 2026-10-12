@@ -26,6 +26,7 @@ class MemoryStore:
         self.cache: dict[tuple[str, str, str], SourceResult] = {}
         self.reports: dict[str, tuple[datetime, Report]] = {}
         self.counters: dict[tuple[str, str], int] = {}
+        self.json_cache: dict[str, tuple[datetime, dict]] = {}
         self.pinned: dict[str, dict] = {}
 
     async def init(self) -> None:
@@ -51,6 +52,15 @@ class MemoryStore:
 
     async def put_report(self, key: str, report: Report) -> None:
         self.reports[key] = (datetime.now(timezone.utc), report)
+
+    async def get_json(self, key: str, max_age: timedelta) -> dict | None:
+        entry = self.json_cache.get(key)
+        if entry and datetime.now(timezone.utc) - entry[0] <= max_age:
+            return entry[1]
+        return None
+
+    async def put_json(self, key: str, data: dict) -> None:
+        self.json_cache[key] = (datetime.now(timezone.utc), data)
 
     async def save(self, investigation: Investigation) -> str:
         investigation.id = str(uuid.uuid4())
@@ -170,6 +180,27 @@ class PostgresStore:
                     "INSERT INTO ai_report_cache (evidence_hash, report, created_at) VALUES (%s, %s, now()) "
                     "ON CONFLICT (evidence_hash) DO UPDATE SET report = EXCLUDED.report, created_at = now()",
                     (key, Jsonb(report.model_dump(mode="json"))),
+                )
+        await asyncio.to_thread(run)
+
+    async def get_json(self, key: str, max_age: timedelta) -> dict | None:
+        """Any saved JSON result, such as a research run. Shares the AI cache table, under its own keys."""
+        def run():
+            with self._connect() as conn:
+                return conn.execute(
+                    "SELECT report FROM ai_report_cache WHERE evidence_hash = %s AND created_at > now() - %s",
+                    (key, max_age),
+                ).fetchone()
+        row = await asyncio.to_thread(run)
+        return row["report"] if row else None
+
+    async def put_json(self, key: str, data: dict) -> None:
+        def run() -> None:
+            with self._connect() as conn:
+                conn.execute(
+                    "INSERT INTO ai_report_cache (evidence_hash, report, created_at) VALUES (%s, %s, now()) "
+                    "ON CONFLICT (evidence_hash) DO UPDATE SET report = EXCLUDED.report, created_at = now()",
+                    (key, Jsonb(data)),
                 )
         await asyncio.to_thread(run)
 
