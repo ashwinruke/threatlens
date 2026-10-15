@@ -14,7 +14,7 @@ import re
 
 from app.knowledge.models import SearchResult
 
-KINDS = {"technique", "tactic", "group", "malware", "tool", "campaign", "mitigation"}
+KINDS = {"technique", "tactic", "group", "malware", "tool", "campaign", "mitigation", "weakness"}
 MAX_LIMIT = 25
 
 CANDIDATES_SQL = """

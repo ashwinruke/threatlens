@@ -157,3 +157,10 @@ def test_still_busy_after_retry_falls_back_to_groq():
 
 def test_not_found_wording_rule_in_prompt():
     assert "Absence of evidence is not evidence of absence" in SYSTEM_PROMPT
+
+
+def test_report_writer_retries_built_in_tool_rejection():
+    rejection = (400, {"error": {"message": "Tool choice is none, but model called a tool"}})
+    report = go(overrides={"gemini": rejection}).report
+    assert report.status == "ready" and report.provider == "Groq"  # rejected twice, so the backup wrote it
+    assert "built-in tool" in report.attempts[0] and "retrying once" in report.attempts[0]

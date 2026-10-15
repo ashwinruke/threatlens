@@ -4,37 +4,83 @@ Run from the backend folder:
     python -m scripts.try_investigation CVE-2021-44228
     python -m scripts.try_investigation 8.8.8.8
 
-Uses your real API keys from .env. Doesn't need the database (uses memory),
-so it also doesn't fill your database with test runs.
+Uses your real API keys from .env. With DATABASE_URL set, it reads the ATT&CK knowledge
+base (needed for threat names and the research agent's tools) and reuses saved source answers,
+but doesn't save the investigation itself, so test runs don't fill your History.
+Without DATABASE_URL it still works, with threat names and ATT&CK research unavailable.
 """
 import asyncio
 import sys
+import time
+import uuid
 
 import httpx2
 
 from app.config import get_settings
 from app.detection import DetectionError
 from app.investigate import investigate
-from app.store import MemoryStore
+from app.store import MemoryStore, PostgresStore
+
+class ScratchStore(PostgresStore):
+    """The real database for reading, without saving this test run to History."""
+
+    async def save(self, investigation) -> str:
+        investigation.id = f"not-saved-{uuid.uuid4()}"
+        return investigation.id
+
+
+async def open_store(settings):
+    if not settings.database_url:
+        print("Note: DATABASE_URL isn't set, so threat names and ATT&CK research won't work.\n")
+        return MemoryStore()
+    store = ScratchStore(settings.database_url)
+    try:
+        await store.init()
+        return store
+    except Exception as exc:
+        await store.close()
+        print(f"Note: couldn't connect to the database ({type(exc).__name__}), so threat names and "
+              "ATT&CK research won't work.\n")
+        return MemoryStore()
+
 
 LEVEL_MARK = {"CRITICAL": "!!!", "HIGH": "!! ", "MEDIUM": "!  ", "LOW": "   ", "UNKNOWN": "?  "}
 
 
 async def main(query: str) -> None:
     settings = get_settings()
+    store = await open_store(settings)
     async with httpx2.AsyncClient(
         timeout=httpx2.Timeout(settings.source_timeout_seconds),  # same timeout as the server
         headers={"User-Agent": "ThreatLens/dev"},
         follow_redirects=True,
     ) as client:
         try:
-            result = await investigate(query, settings, MemoryStore(), client)
+            print("LIVE")
+            started = time.perf_counter()
+
+            def show(kind: str, data: dict) -> None:
+                # Each step as it happens, like the website's live view
+                at = f"{time.perf_counter() - started:5.1f}s"
+                if kind == "step":
+                    title = data["title"]
+                    if data["kind"] == "save" and isinstance(store, ScratchStore):
+                        title = "Not saved: terminal test runs don't go into History"
+                    print(f"  {at}  [{data['kind']}] {title}")
+                elif kind == "status":
+                    print(f"  {at}  … {data['text']}")
+
+            result = await investigate(query, settings, store, client, on_event=show)
         except DetectionError as exc:
             print(f"Input problem: {exc}")
+            await store.close()
             return
 
     v = result.verdict
-    print(f"\n{LEVEL_MARK.get(v.level, '')} {v.level}  score {v.score}/100  ({v.confidence} confidence)")
+    if v.level == "PROFILE":
+        print(f"\n    THREAT PROFILE  (matched by {result.threat.matched_on}; no risk score for a named threat)")
+    else:
+        print(f"\n{LEVEL_MARK.get(v.level, '')} {v.level}  score {v.score}/100  ({v.confidence} confidence)")
     print(f"    {v.headline}\n")
 
     print("SCORE BREAKDOWN")
@@ -83,10 +129,8 @@ async def main(query: str) -> None:
         if src.message and src.status.value != "ok":
             print(f"                {src.message}")
 
-    print("\nTRACE")
-    for step in result.trace:
-        print(f"  {step.step:>2}. [{step.kind}] {step.title}")
     print(f"\nFinished in {result.duration_ms} ms.")
+    await store.close()
 
 
 if __name__ == "__main__":

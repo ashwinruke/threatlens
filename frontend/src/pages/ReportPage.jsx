@@ -7,7 +7,7 @@ import SourceList from "../components/SourceList";
 import { Candidates, ProfileDetails, ProfileSide } from "../components/ThreatProfile";
 import Timeline from "../components/Timeline";
 import { api } from "../lib/api";
-import { seconds, timeAgo, typeName } from "../lib/format";
+import { knowledgeBase, seconds, timeAgo, typeName } from "../lib/format";
 import { Link } from "../lib/router";
 
 const LEVEL_TEXT = {
@@ -19,7 +19,7 @@ const LEVEL_TEXT = {
   PROFILE: "Threat profile",
 };
 
-// A threat name that didn't resolve to one ATT&CK entry: no risk was assessed, so say what happened instead
+// A threat name that didn't resolve to one ATT&CK or CWE entry: no risk was assessed, so say what happened instead
 const UNMATCHED_TEXT = { ambiguous: "Several matches", not_found: "No match", unavailable: "Not available" };
 
 function CopyLink() {
@@ -74,14 +74,14 @@ export default function ReportPage({ id }) {
   const unmatched = threat && !profile;
   document.title = `${indicator.value}: ${unmatched ? UNMATCHED_TEXT[threat.status] || "No match" : LEVEL_TEXT[verdict.level]} | ThreatLens`;
   const lensLabel = profile
-    ? `Threat profile for ${profile.entity.name}, ATT&CK ${profile.entity.external_id}`
+    ? `Threat profile for ${profile.entity.name}, ${knowledgeBase(profile.entity.kind)} ${profile.entity.external_id}`
     : `Risk score ${verdict.score} out of 100, ${verdict.level}`;
 
   return (
     <main className="page page--wide">
       <section className={`verdict lvl-${verdict.level}`}>
         <Lens score={verdict.score} level={verdict.level} size={176} label={lensLabel}
-          badge={profile?.entity.external_id} />
+          badge={profile?.entity.external_id} base={profile ? knowledgeBase(profile.entity.kind) : undefined} />
         <div className="verdict__text">
           <p className="verdict__type">{typeName(indicator)}</p>
           <h1 className="verdict__value">{indicator.value}</h1>
@@ -90,7 +90,8 @@ export default function ReportPage({ id }) {
           )}
           <p className="verdict__level">
             <span className="level-pill">
-              {unmatched ? UNMATCHED_TEXT[threat.status] || "No match" : LEVEL_TEXT[verdict.level]}
+              {unmatched ? UNMATCHED_TEXT[threat.status] || "No match"
+                : profile?.entity.kind === "weakness" ? "Weakness profile" : LEVEL_TEXT[verdict.level]}
             </span>
             {!unmatched && (
               <span className="verdict__confidence">
@@ -113,7 +114,7 @@ export default function ReportPage({ id }) {
           <Candidates lookup={threat} />
           {threat.candidates.length === 0 && (
             <p className="notice">
-              Try another spelling, an alias from a report (like "Cozy Bear"), or an ATT&CK ID (like G1017).
+              Try another spelling, an alias from a report (like "Cozy Bear"), an ATT&CK ID (like G1017), or a CWE ID (like CWE-79).
             </p>
           )}
         </div>

@@ -17,7 +17,7 @@ class IndicatorType(StrEnum):
     IP = "ip"
     DOMAIN = "domain"
     HASH = "hash"
-    THREAT = "threat"  # a named threat looked up in MITRE ATT&CK: group, malware, tool, campaign, technique
+    THREAT = "threat"  # a name or ID looked up in MITRE ATT&CK (group, malware, technique...) or CWE (weakness)
 
 
 class Indicator(BaseModel):

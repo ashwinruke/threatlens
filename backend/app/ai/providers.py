@@ -35,9 +35,10 @@ class Completion:
 class Provider:
     name = ""
 
-    def __init__(self, settings: Settings, model: str | None = None) -> None:
+    def __init__(self, settings: Settings, model: str | None = None, timeout: float | None = None) -> None:
         self.settings = settings
         self._model = model  # overrides the configured model, e.g. a smaller one for the research agent
+        self.timeout = timeout or settings.ai_timeout_seconds  # the agent waits less than the report writer
 
     @property
     def model(self) -> str:
@@ -73,6 +74,11 @@ def _raise_for_status(response: httpx2.Response, name: str) -> None:
         raise ProviderError(f"{name} doesn't recognize the model name (HTTP 404){detail}")
     if code in (500, 502, 503, 504):
         raise ProviderError(f"{name} was busy or had a server error (HTTP {code}){detail}", retryable=True)
+    if code == 400 and "called a tool" in detail:
+        # gpt-oss models have built-in tools (web search, code) and sometimes try to use one on their own,
+        # even when the request offers none. Groq then rejects the answer. It's random, so a retry usually works.
+        raise ProviderError(f"{name}'s model tried to use a built-in tool instead of answering (HTTP 400)",
+                            retryable=True)
     raise ProviderError(f"{name} returned HTTP {code}{detail}")
 
 
@@ -95,7 +101,7 @@ class GeminiProvider(Provider):
                 "contents": [{"role": "user", "parts": [{"text": user}]}],
                 "generationConfig": {"responseMimeType": "application/json", "maxOutputTokens": 8192},
             },
-            timeout=self.settings.ai_timeout_seconds,
+            timeout=self.timeout,
         )
         _raise_for_status(response, self.name)
         body = response.json()
@@ -132,7 +138,7 @@ class GroqProvider(Provider):
                 "temperature": 0.2,
                 "max_completion_tokens": 4096,
             },
-            timeout=self.settings.ai_timeout_seconds,
+            timeout=self.timeout,
         )
         _raise_for_status(response, self.name)
         body = response.json()
@@ -144,7 +150,8 @@ class GroqProvider(Provider):
         return Completion(text, usage.get("prompt_tokens"), usage.get("completion_tokens"))
 
 
-def providers_in_order(settings: Settings, models: dict[str, str] | None = None) -> list[Provider]:
+def providers_in_order(settings: Settings, models: dict[str, str] | None = None,
+                       timeout: float | None = None) -> list[Provider]:
     """Providers in the order set by AI_PROVIDER_ORDER (unknown names are ignored)."""
     by_name = {"gemini": GeminiProvider, "groq": GroqProvider}
     chosen = [by_name[n] for n in
@@ -155,4 +162,4 @@ def providers_in_order(settings: Settings, models: dict[str, str] | None = None)
             chosen.append(cls)
     models = models or {}
     names = {GeminiProvider: "gemini", GroqProvider: "groq"}
-    return [cls(settings, models.get(names[cls]) or None) for cls in chosen]
+    return [cls(settings, models.get(names[cls]) or None, timeout) for cls in chosen]

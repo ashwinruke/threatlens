@@ -94,7 +94,7 @@ def test_closest_match_is_flagged():
 
 
 @pytest.mark.parametrize("status, words", [
-    ("not_found", "No group, malware"), ("ambiguous", "Several ATT&CK entries"), ("unavailable", "isn't available"),
+    ("not_found", "No group, malware"), ("ambiguous", "Several ATT&CK or CWE entries"), ("unavailable", "isn't available"),
 ])
 def test_no_single_match_is_unknown(status, words):
     verdict = threats.verdict_for(ThreatLookup(query="x", status=status))

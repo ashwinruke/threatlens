@@ -1,7 +1,7 @@
 // The ThreatLens lens. On the home page it's the brand mark; on a report it becomes
 // the risk gauge: the arc fills with the score and the core takes the risk level's color.
-// A threat profile has no score, so the lens shows the threat's ATT&CK ID instead.
-export default function Lens({ score = null, level = null, size = 168, label, badge = null }) {
+// A threat profile has no score, so the lens shows its ATT&CK or CWE ID instead, with the knowledge base below.
+export default function Lens({ score = null, level = null, size = 168, label, badge = null, base = "ATT&CK" }) {
   const radius = 44;
   const circumference = 2 * Math.PI * radius;
   const known = score !== null && level && level !== "UNKNOWN" && level !== "PROFILE";
@@ -32,8 +32,8 @@ export default function Lens({ score = null, level = null, size = 168, label, ba
       </svg>
       {level === "PROFILE" && (
         <div className="lens__score">
-          <span className="lens__badge">{badge || "ATT&CK"}</span>
-          <span className="lens__outof">ATT&CK</span>
+          <span className="lens__badge">{badge || base}</span>
+          <span className="lens__outof">{base}</span>
         </div>
       )}
       {level && level !== "PROFILE" && (

@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "ThreatLens API"
-    app_version: str = "0.8.0"
+    app_version: str = "0.9.1"
     app_env: str = "development"
 
     database_url: str = ""
@@ -40,7 +40,8 @@ class Settings(BaseSettings):
     agent_gemini_model: str = ""  # empty means the same as GEMINI_MODEL
     agent_max_steps: int = 3  # tool calls (and so AI decisions) per investigation
     agent_max_lookups: int = 1  # extra indicator investigations, which use the source APIs' quotas
-    agent_timeout_seconds: float = 60.0
+    agent_timeout_seconds: float = 60.0  # the whole research run
+    agent_ai_timeout_seconds: float = 20.0  # one decision; a slow provider is skipped sooner
     daily_research_cap: int = 30
 
     # Limits that protect the free tiers on a public demo

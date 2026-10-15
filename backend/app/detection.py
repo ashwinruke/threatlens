@@ -58,6 +58,8 @@ NAME_MAX_LENGTH = 100
 # ATT&CK IDs: techniques (T1059, T1059.001), tactics (TA0006), groups, software, campaigns, mitigations
 ATTACK_ID_RE = re.compile(r"^(?:T\d{4}(?:\.\d{3})?|TA\d{4}|[GSCM]\d{4})$", re.IGNORECASE)
 NOT_IN_NAMES = re.compile(r"[.@:/\\]")
+# CWE IDs as people type them: "CWE-79", "cwe 79", "CWE79"
+CWE_RE = re.compile(r"^CWE[-\s]?(\d{1,5})$", re.IGNORECASE)
 
 
 def detect(raw: str) -> Indicator:
@@ -71,6 +73,10 @@ def detect(raw: str) -> Indicator:
     text = raw.strip().strip("'\"`<>")
     if not text:
         raise DetectionError("Please enter a CVE, IP address, domain, file hash, or threat name.")
+
+    cwe = CWE_RE.match(text)
+    if cwe:  # a weakness ID: looked up in the CWE knowledge base, like a threat name
+        return Indicator(type=IndicatorType.THREAT, value=f"CWE-{int(cwe.group(1))}", original=original)
 
     if any(ch.isspace() for ch in text):
         # Several words: a name like "Volt Typhoon", unless one of them is an indicator

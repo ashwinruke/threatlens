@@ -282,3 +282,45 @@ def test_threat_profile_research(store):
     assert "C0035 KV Botnet Activity (campaigns attributed to this group, from MITRE ATT&CK)" in run.leads
     assert run.steps[0].ok and run.steps[0].data["name"] == "VersaMem"
     assert result.verdict.level == "PROFILE"
+
+
+# ---------------------------------------------------------------- gpt-oss built-in tool rejection
+
+TOOL_REJECTION = (400, {"error": {"message": "Tool choice is none, but model called a tool",
+                                  "type": "invalid_request_error"}})
+
+
+def test_built_in_tool_rejection_is_retried():
+    # Seen with gpt-oss on Groq: the model tries a built-in tool (web search, code) instead of answering
+    calls = []
+    run = go(fakes.LOG4SHELL, [TOOL_REJECTION, step("investigate_indicator", fakes.BAD_IP), FINISH],
+             calls=calls).research
+    assert run.status == "done" and [s.ok for s in run.steps] == [True]
+    # retried on the same provider, never handed to the backup
+    assert not any("groq.com" in c for c in calls if c.startswith("agent "))
+
+
+def test_repeated_tool_rejection_moves_to_the_backup_provider():
+    run = go(fakes.LOG4SHELL, [TOOL_REJECTION, TOOL_REJECTION, FINISH]).research
+    assert run.status == "done" and run.provider == "Groq"
+
+
+def test_agent_waits_less_than_the_report_writer():
+    from app.agent.runner import _models
+    from app.ai.providers import providers_in_order
+    s = settings(agent_ai_timeout_seconds=7, ai_timeout_seconds=45)
+    assert {p.timeout for p in providers_in_order(s, _models(s), s.agent_ai_timeout_seconds)} == {7}
+    assert {p.timeout for p in providers_in_order(s)} == {45}
+
+
+@needs_db
+def test_terminal_script_reads_the_database_without_saving(store):
+    from scripts.try_investigation import ScratchStore
+    scratch = ScratchStore(DB_URL)
+    asyncio.run(scratch.init())
+    before = len(asyncio.run(scratch.recent(100)))
+    result = asyncio.run(investigate("Volt Typhoon", settings(research_enabled=False), scratch, fakes.router()))
+    assert result.threat.status == "matched"  # the ATT&CK knowledge base was readable
+    assert result.id.startswith("not-saved-")
+    assert len(asyncio.run(scratch.recent(100))) == before  # nothing added to History
+    asyncio.run(scratch.close())

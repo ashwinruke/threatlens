@@ -13,7 +13,7 @@ from app.knowledge.repository import KnowledgeRepository
 from app.knowledge.search import search
 from app.models import Indicator, SourceResult, SourceStatus, Verdict
 
-THREAT_KINDS = ["group", "malware", "tool", "campaign", "technique"]
+THREAT_KINDS = ["group", "malware", "tool", "campaign", "technique", "weakness"]
 EXACT_SCORE = 190  # exact ID, name, or alias (see knowledge/search.py)
 CLOSE_SCORE = 45  # a spelling match at least this good can be accepted...
 CLEAR_LEAD = 10  # ...if it's clearly ahead of the next one
@@ -21,7 +21,8 @@ MAX_CANDIDATES = 5
 MIN_CANDIDATE_SCORE = 30  # below this, or matched only by scattered description words, it's noise
 MAX_TECHNIQUES_FOR_AI = 40
 
-KIND_PHRASES = {"group": "a threat group", "malware": "malware", "tool": "a tool attackers use",
+KIND_PHRASES = {"weakness": "a software weakness", "group": "a threat group", "malware": "malware",
+                "tool": "a tool attackers use",
                 "campaign": "a campaign", "technique": "an attack technique"}
 
 
@@ -81,11 +82,11 @@ def verdict_for(lookup: ThreatLookup) -> Verdict:
                        headline="The threat knowledge base isn't available right now, so names can't be looked up.")
     if lookup.status == "not_found":
         return Verdict(score=0, level="UNKNOWN", confidence="low",
-                       headline=f"No group, malware, tool, campaign, or technique in MITRE ATT&CK matches "
+                       headline=f"No group, malware, tool, campaign, technique, or weakness in MITRE ATT&CK or CWE matches "
                                 f"\"{lookup.query}\". It may be too new, or known by another name.")
     if lookup.status == "ambiguous":
         return Verdict(score=0, level="UNKNOWN", confidence="low",
-                       headline=f"Several ATT&CK entries could match \"{lookup.query}\". Pick the one you mean below.")
+                       headline=f"Several ATT&CK or CWE entries could match \"{lookup.query}\". Pick the one you mean below.")
 
     profile = lookup.profile
     entity = profile.entity
@@ -99,8 +100,16 @@ def verdict_for(lookup: ThreatLookup) -> Verdict:
     if campaigns:
         documented.append(_plural(campaigns, "campaign"))
     users = _count(profile, "Used by groups")
+    children = _count(profile, "More specific weaknesses")
+    likelihood = entity.details.get("likelihood_of_exploit") if entity.kind == "weakness" else None
 
-    headline = f"{entity.name} ({entity.external_id}) is {KIND_PHRASES.get(entity.kind, entity.kind)} in MITRE ATT&CK"
+    headline = (f"{entity.name} ({entity.external_id}) is {KIND_PHRASES.get(entity.kind, entity.kind)} "
+                f"in {source_name(entity)}")
+    if likelihood and likelihood != "Unknown":
+        headline += f", with a {likelihood.lower()} likelihood of exploit"
+    if children:
+        headline += (", and" if likelihood and likelihood != "Unknown" else ", with") + \
+            f" {_plural(children, 'more specific weakness', 'more specific weaknesses')} under it"
     if documented:
         headline += ", documented with " + _join(documented)
     if users:
@@ -113,6 +122,10 @@ def verdict_for(lookup: ThreatLookup) -> Verdict:
                     f"({lookup.matched_on}). Check it's the one you meant."])
 
 
+def source_name(entity) -> str:
+    return "MITRE CWE" if entity.kind == "weakness" else "MITRE ATT&CK"
+
+
 def as_source(lookup: ThreatLookup) -> SourceResult:
     """The profile as a source the AI report writer can cite, like NVD or VirusTotal.
 
@@ -121,7 +134,7 @@ def as_source(lookup: ThreatLookup) -> SourceResult:
     profile = lookup.profile
     entity = profile.entity
     facts = {
-        "attack_id": entity.external_id,
+        "id": entity.external_id,
         "name": entity.name,
         "kind": entity.kind,
         "also_known_as": entity.aliases[:15],
@@ -148,4 +161,13 @@ def as_source(lookup: ThreatLookup) -> SourceResult:
     if entity.kind == "campaign":
         facts["first_seen"] = entity.details.get("first_seen")
         facts["last_seen"] = entity.details.get("last_seen")
-    return SourceResult(source="MITRE ATT&CK", status=SourceStatus.OK, link=entity.url, facts=facts)
+    if entity.kind == "weakness":
+        details = entity.details
+        facts["abstraction"] = details.get("abstraction")  # Pillar (broadest) > Class > Base > Variant (most specific)
+        facts["likelihood_of_exploit"] = details.get("likelihood_of_exploit")
+        facts["consequences"] = [f"{', '.join(c['scope'])}: {', '.join(c['impact'])}"
+                                 for c in details.get("consequences", [])[:6]]
+        facts["how_to_prevent"] = [f"{', '.join(m['phase']) or 'Any phase'}: {m['description']}"
+                                   for m in details.get("mitigations", [])[:5]]
+        facts["platforms"] = details.get("platforms", [])
+    return SourceResult(source=source_name(entity), status=SourceStatus.OK, link=entity.url, facts=facts)

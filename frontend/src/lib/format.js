@@ -8,7 +8,7 @@ export const TYPE_NAMES = {
   threat: "Threat name",
 };
 
-// What a threat name turned out to be, in ATT&CK terms
+// What a threat name turned out to be, in ATT&CK or CWE terms
 export const THREAT_KIND_NAMES = {
   group: "Threat group",
   malware: "Malware",
@@ -17,7 +17,13 @@ export const THREAT_KIND_NAMES = {
   technique: "Attack technique",
   tactic: "Tactic",
   mitigation: "Mitigation",
+  weakness: "Software weakness (CWE)",
 };
+
+// Which MITRE knowledge base an entry comes from: weaknesses are CWE, everything else ATT&CK
+export function knowledgeBase(kind) {
+  return kind === "weakness" ? "CWE" : "ATT&CK";
+}
 
 export const SUBTYPE_NAMES = { ipv4: "IPv4", ipv6: "IPv6", md5: "MD5", sha1: "SHA-1", sha256: "SHA-256" };
 

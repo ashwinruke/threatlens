@@ -29,6 +29,11 @@ LABELS = [
     (("in", "mitigates", "mitigation"), "Mitigations"),
     (("out", "mitigates", "technique"), "Techniques this mitigates"),
     (("in", "in-tactic", "technique"), "Techniques in this tactic"),
+    # CWE weaknesses
+    (("out", "childof", "weakness"), "Broader weakness"),
+    (("in", "childof", "weakness"), "More specific weaknesses"),
+    (("out", "can-precede", "weakness"), "Can lead to"),
+    (("in", "can-precede", "weakness"), "Can result from"),
 ]
 LABEL_ORDER = {key: (position, label) for position, (key, label) in enumerate(LABELS)}
 
@@ -148,6 +153,17 @@ class KnowledgeRepository:
         row, links, redirected_from = result
         return EntityView(entity=_entity(row), related=_group(links), redirected_from=redirected_from)
 
+
+    async def names(self, external_ids: list[str]) -> dict[str, str]:
+        """Names for a list of IDs, e.g. {"CWE-502": "Deserialization of Untrusted Data"}. Unknown IDs are left out."""
+        if not external_ids:
+            return {}
+
+        def run():
+            with self.store.connection() as conn:
+                return conn.execute("SELECT external_id, name FROM entities WHERE upper(external_id) = ANY(%s)",
+                                    ([i.upper() for i in external_ids],)).fetchall()
+        return {row["external_id"].upper(): row["name"] for row in await asyncio.to_thread(run)}
 
     async def profile(self, external_id: str) -> ThreatProfile | None:
         """Everything a defender needs about one threat, built on top of view().

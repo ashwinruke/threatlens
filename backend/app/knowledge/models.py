@@ -19,6 +19,7 @@ ATTACK_KINDS = {
     "campaign": "campaign",
     "course-of-action": "mitigation",
 }
+# Other kinds in the graph, from other sources: "weakness" (MITRE CWE)
 
 
 class Entity(BaseModel):

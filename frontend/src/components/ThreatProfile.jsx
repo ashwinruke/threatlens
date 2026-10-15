@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "../lib/api";
-import { THREAT_KIND_NAMES } from "../lib/format";
+import { knowledgeBase, THREAT_KIND_NAMES } from "../lib/format";
 import { navigate } from "../lib/router";
 
 // Labels from the backend that this page shows in its own way (techniques are grouped by tactic)
@@ -16,7 +16,7 @@ function External({ href, children }) {
 }
 
 // Matches to choose from: when a name was ambiguous, or "not the one you meant?" after a match.
-// Picking one starts a new investigation by its ATT&CK ID, which is always an exact match.
+// Picking one starts a new investigation by its ATT&CK or CWE ID, which is always an exact match.
 export function Candidates({ lookup, compact = false }) {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
@@ -85,6 +85,14 @@ export function ProfileSide({ lookup }) {
         {details.platforms?.length > 0 && (
           <p className="glance__line">Platforms: {details.platforms.join(", ")}</p>
         )}
+        {entity.kind === "weakness" && details.abstraction && (
+          <p className="glance__line" title="CWE's levels, from most general to most specific: Pillar, Class, Base, Variant">
+            Level: {details.abstraction}
+          </p>
+        )}
+        {entity.kind === "weakness" && details.likelihood_of_exploit && (
+          <p className="glance__line">Likelihood of exploit: {details.likelihood_of_exploit}</p>
+        )}
         {entity.kind === "technique" && details.tactics?.length > 0 && (
           <p className="glance__line">Tactic: {details.tactics.map((t) => t.name).join(", ")}</p>
         )}
@@ -105,7 +113,7 @@ export function ProfileSide({ lookup }) {
           </div>
         )}
         <p className="glance__source">
-          Source: <External href={entity.url}>MITRE ATT&CK {entity.external_id}</External>
+          Source: <External href={entity.url}>MITRE {knowledgeBase(entity.kind)} {entity.external_id}</External>
         </p>
       </section>
       <Candidates lookup={lookup} compact />
@@ -113,9 +121,48 @@ export function ProfileSide({ lookup }) {
   );
 }
 
+// For a CWE weakness: what an attacker gains from it, and how developers prevent it
+function WeaknessDetails({ details }) {
+  const consequences = details.consequences || [];
+  const fixes = details.mitigations || [];
+  return (
+    <>
+      {consequences.length > 0 && (
+        <section className="profile__section" aria-labelledby="consequences-title">
+          <h2 id="consequences-title">What an attacker can do with it</h2>
+          <ul className="consequences">
+            {consequences.map((c, i) => (
+              <li key={i} className="consequence">
+                <span className="consequence__impact">{c.impact.join(", ") || "Unspecified impact"}</span>
+                {c.scope.length > 0 && <span className="muted"> · affects {c.scope.join(", ")}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {fixes.length > 0 && (
+        <section className="profile__section" aria-labelledby="prevent-title">
+          <h2 id="prevent-title">How to prevent it</h2>
+          <p className="muted">MITRE's advice for developers, with the stage of building software where each step belongs.</p>
+          <ol className="fixes">
+            {fixes.map((m, i) => (
+              <li key={i} className="fix">
+                {m.phase.length > 0 && <span className="fix__phase">{m.phase.join(", ")}</span>}
+                <span>{m.description}</span>
+                {m.effectiveness && <span className="muted"> Effectiveness: {m.effectiveness}.</span>}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+    </>
+  );
+}
+
 // Below the summary: defenses, techniques, and everything connected to this threat.
 export function ProfileDetails({ profile }) {
   const { techniques, tactics, mitigations, related } = profile;
+  const weakness = profile.entity.kind === "weakness";
   const byTactic = new Map(tactics.map((t) => [t.name, []]));
   for (const technique of techniques) {
     for (const tactic of technique.tactics.length ? technique.tactics : ["Other"]) {
@@ -128,6 +175,7 @@ export function ProfileDetails({ profile }) {
 
   return (
     <div className="profile">
+      {weakness && <WeaknessDetails details={profile.entity.details || {}} />}
       {mitigations.length > 0 && (
         <section className="profile__section" aria-labelledby="defenses-title">
           <h2 id="defenses-title">Defenses that cover the most of its techniques</h2>

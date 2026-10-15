@@ -2,6 +2,8 @@
 
 Run locally with:  uvicorn app.main:app --reload
 """
+import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -9,7 +11,7 @@ from datetime import datetime, timezone
 import httpx2
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.config import get_settings
 from app.db import check_database
@@ -22,6 +24,7 @@ from app.store import MemoryStore, PostgresStore
 
 logger = logging.getLogger("threatlens")
 settings = get_settings()
+KEEPALIVE_SECONDS = 15
 limiter = VisitorLimiter()
 
 
@@ -34,6 +37,7 @@ async def lifespan(app: FastAPI):
         follow_redirects=True,
     )
     app.state.store = MemoryStore()
+    app.state.tasks = set()  # streamed investigations still running
     if settings.database_url:
         store = PostgresStore(settings.database_url)
         try:
@@ -103,9 +107,12 @@ def detect_input(body: InvestigateRequest, request: Request):
         raise HTTPException(status_code=422, detail=str(exc))
 
 
-@app.post("/api/investigations", response_model=Investigation)
-async def create_investigation(body: InvestigateRequest, request: Request):
-    """Run a full investigation. Usually takes a few seconds."""
+AI_LIMIT_MESSAGE = ("The daily AI summary limit for this free demo has been reached. "
+                    "The score, evidence, and decision trail below are unaffected.")
+
+
+async def _admit(request: Request) -> tuple[object, bool, bool]:
+    """Apply the usage limits. Returns (store, AI allowed, research allowed) or raises 429."""
     store = request.app.state.store
     decision = limiter.check("investigate", visitor_key(request),
                              settings.investigations_per_hour_per_visitor, 3600)
@@ -121,26 +128,86 @@ async def create_investigation(body: InvestigateRequest, request: Request):
             detail=("ThreatLens has reached its daily investigation limit for this free demo. "
                     "The example investigations below still work, and new searches open again tomorrow."),
         )
-    ai_used_today = await store.count_today("ai_reports", add=0)
-    ai_allowed = ai_used_today < settings.daily_ai_report_cap
+    ai_allowed = await store.count_today("ai_reports", add=0) < settings.daily_ai_report_cap
     research_allowed = await store.count_today("research_runs", add=0) < settings.daily_research_cap
+    return store, ai_allowed, research_allowed
 
-    try:
-        result = await investigate(
-            body.query, settings, store, request.app.state.http,
-            ai_cache_only=not ai_allowed,
-            research_allowed=research_allowed,
-            ai_skipped_message=("The daily AI summary limit for this free demo has been reached. "
-                                "The score, evidence, and decision trail below are unaffected."),
-        )
-    except DetectionError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
 
+async def _count_usage(store, result: Investigation) -> None:
     if result.report and result.report.status == "ready" and not result.report.cached:
         await store.count_today("ai_reports")
     if result.research and result.research.ai_calls and not result.research.cached:
         await store.count_today("research_runs")
+
+
+@app.post("/api/investigations", response_model=Investigation)
+async def create_investigation(body: InvestigateRequest, request: Request):
+    """Run a full investigation and return the result. Usually takes a few seconds."""
+    store, ai_allowed, research_allowed = await _admit(request)
+    try:
+        result = await investigate(body.query, settings, store, request.app.state.http,
+                                   ai_cache_only=not ai_allowed, research_allowed=research_allowed,
+                                   ai_skipped_message=AI_LIMIT_MESSAGE)
+    except DetectionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await _count_usage(store, result)
     return result
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+
+
+@app.post("/api/investigations/stream")
+async def stream_investigation(body: InvestigateRequest, request: Request):
+    """The same investigation, sent step by step as it happens (Server-Sent Events).
+
+    Events, in order:
+    - `step`: one decision-trail step, the moment it's recorded
+    - `status`: a short message during a slow wait, e.g. "Waiting for 5 sources to answer…"
+    - `done`: the finished investigation, exactly as `POST /api/investigations` returns it
+    - `error`: something went wrong; `detail` says what
+
+    Problems with the input or the usage limits are answered with a normal 422 or 429 before
+    any streaming starts. If the browser disconnects, the investigation still finishes and is saved.
+    """
+    try:
+        detect(body.query)
+    except DetectionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    store, ai_allowed, research_allowed = await _admit(request)
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def run() -> None:
+        try:
+            result = await investigate(body.query, settings, store, request.app.state.http,
+                                       ai_cache_only=not ai_allowed, research_allowed=research_allowed,
+                                       ai_skipped_message=AI_LIMIT_MESSAGE,
+                                       on_event=lambda kind, data: queue.put_nowait((kind, data)))
+            await _count_usage(store, result)
+            queue.put_nowait(("done", result.model_dump(mode="json")))
+        except Exception:
+            logger.exception("Streamed investigation failed")
+            queue.put_nowait(("error", {"detail": "The investigation failed unexpectedly. Please try again."}))
+
+    # Runs on its own, so closing the tab doesn't cancel it; kept referenced until it ends
+    task = asyncio.create_task(run())
+    request.app.state.tasks.add(task)
+    task.add_done_callback(request.app.state.tasks.discard)
+
+    async def events():
+        while True:
+            try:
+                kind, data = await asyncio.wait_for(queue.get(), timeout=KEEPALIVE_SECONDS)
+            except asyncio.TimeoutError:
+                yield ": still working\n\n"  # a comment line keeps proxies from closing a quiet connection
+                continue
+            yield _sse(kind, data)
+            if kind in ("done", "error"):
+                return
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.get("/api/examples", response_model=list[Example])
