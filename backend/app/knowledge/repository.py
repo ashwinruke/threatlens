@@ -48,15 +48,20 @@ class KnowledgeRepository:
                       relationships: list[Relationship], redirects: list[Redirect]) -> dict:
         """Replace everything from one source in a single transaction.
 
-        Rows are upserted, then anything from this source that's no longer in the file
-        (for example, entries MITRE retired since the last import) is deleted.
-        If anything fails, nothing changes.
+        Anything from this source that's no longer in the file (for example, entries MITRE
+        retired since the last import) is deleted first, then the rest is upserted. Deleting
+        first matters when MITRE moves an ID such as C0035 to a new internal record: the old
+        record must be gone before the new one can take its ID. If anything fails, nothing changes.
         """
         counts: dict[str, int] = {}
         for entity in entities:
             counts[entity.kind] = counts.get(entity.kind, 0) + 1
 
         with self.store.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            cur.execute("DELETE FROM entities WHERE source = %s AND NOT (id = ANY(%s))",
+                        (source, [e.id for e in entities]))
+            removed_entities = cur.rowcount
+
             cur.executemany(
                 "INSERT INTO entities (id, kind, external_id, name, aliases, description, url, source, details, updated_at) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now()) "
@@ -66,9 +71,6 @@ class KnowledgeRepository:
                 [(e.id, e.kind, e.external_id, e.name, e.aliases, e.description, e.url, e.source, Jsonb(e.details))
                  for e in entities],
             )
-            cur.execute("DELETE FROM entities WHERE source = %s AND NOT (id = ANY(%s))",
-                        (source, [e.id for e in entities]))
-            removed_entities = cur.rowcount
 
             cur.executemany(
                 "INSERT INTO relationships (id, source_id, target_id, type, description, source, updated_at) "

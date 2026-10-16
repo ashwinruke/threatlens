@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import AiSummary from "../components/AiSummary";
+import AttackMap from "../components/AttackMap";
 import EvidenceGraph from "../components/EvidenceGraph";
 import Research from "../components/Research";
 import Lens from "../components/Lens";
@@ -138,7 +139,9 @@ export default function ReportPage({ id }) {
         </div>
       )}
 
-      {profile && <ProfileDetails profile={profile} />}
+      {profile && <ProfileDetails profile={profile} showTechniques={false} />}
+
+      {!unmatched && <AttackMap id={data.id} showDefenses={!profile} />}
 
       {!unmatched && <EvidenceGraph id={data.id} level={verdict.level} />}
 

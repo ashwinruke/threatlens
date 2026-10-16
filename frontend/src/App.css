@@ -550,6 +550,53 @@ a.cite:hover { background: var(--amber); color: var(--ink); }
   .wire, .link, .gnode, .mapnode { transition: none; }
 }
 
+/* ---------- ATT&CK map ---------- */
+.amap-wrap { margin-top: 48px; padding-top: 28px; border-top: 1px solid var(--line); }
+.button-link {
+  display: inline-block; padding: 7px 14px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--panel); color: var(--text); font-size: 0.88rem; text-decoration: none;
+}
+.button-link:hover { border-color: var(--amber); }
+.amap__controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; margin-bottom: 14px; }
+.amap__controls .legend { margin-top: 0; }
+.amap__mark { flex: none; display: inline-block; width: 16px; height: 10px; border-radius: 3px; }
+.amap__mark--reported { background: rgba(240, 179, 74, 0.25); border: 1.5px solid var(--amber); }
+.amap__mark--linked { border: 1.5px dashed var(--muted); }
+.amap { display: grid; border-top: 1px solid var(--line); }
+.amap__row { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 18px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.amap__row.is-empty { padding: 7px 0; opacity: 0.6; }
+.amap__row.is-empty .amap__stage-about { display: none; }
+.amap__stage { display: grid; gap: 2px; align-content: start; }
+.amap__stage-name { font-weight: 600; font-size: 0.95rem; }
+.amap__stage-about { color: var(--muted); font-size: 0.8rem; line-height: 1.35; }
+.amap__none { font-size: 0.85rem; }
+.amap__chips { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.amap__chip {
+  display: inline-flex; align-items: baseline; gap: 7px; padding: 5px 10px; border-radius: var(--radius-sm);
+  font-weight: 400; font-size: 0.86rem; color: var(--text); white-space: normal; text-align: left;
+  background: none; border: 1.5px dashed var(--line);
+}
+.amap__chip--reported { background: rgba(240, 179, 74, 0.12); border: 1.5px solid var(--amber); }
+.amap__chip:hover { border-color: var(--muted); }
+.amap__chip--reported:hover { border-color: var(--amber); background: rgba(240, 179, 74, 0.2); }
+.amap__chip.is-selected { background: #2a4153; border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
+.amap__more { padding: 5px 10px; border-radius: var(--radius-sm); font-weight: 500; font-size: 0.84rem; color: var(--amber); background: none; border: 1px solid transparent; }
+.amap__more:hover { border-color: var(--line); }
+.amap__id { font-family: var(--font-data); font-size: 0.74rem; color: var(--muted); }
+.amap__count { font-family: var(--font-data); font-size: 0.74rem; color: var(--amber); }
+.amap__detail { margin-top: 10px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); font-size: 0.9rem; }
+.amap__detail > * + * { margin-top: 8px; }
+.amap__evidence { list-style: none; padding: 0; display: grid; gap: 6px; }
+.amap__evidence li { display: flex; gap: 10px; align-items: baseline; }
+.amap__toggle { margin-top: 10px; font-size: 0.88rem; color: var(--muted); }
+.amap__linked { font-size: 0.86rem; margin-top: 14px; }
+.amap__defenses { margin-top: 24px; }
+.amap__defenses h3 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; }
+
+@media (max-width: 640px) {
+  .amap__row { grid-template-columns: 1fr; gap: 8px; }
+}
+
 /* ---------- Small screens ---------- */
 @media (max-width: 860px) {
   .report-grid { grid-template-columns: 1fr; }

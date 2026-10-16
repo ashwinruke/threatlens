@@ -145,6 +145,7 @@ export const api = {
     loaded.set(id, result);
     return result;
   },
+  getAttackMap: (id) => request(`/api/investigations/${encodeURIComponent(id)}/attack`, { timeoutMs: 75_000 }),
   getGraph: (id) => request(`/api/investigations/${encodeURIComponent(id)}/graph`, { timeoutMs: 75_000 }),
   examples: () => request("/api/examples", { timeoutMs: 75_000 }),
   listInvestigations: (limit = 20) => request(`/api/investigations?limit=${limit}`, { timeoutMs: 75_000 }),

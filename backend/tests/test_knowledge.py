@@ -129,6 +129,23 @@ def test_reimport_removes_what_mitre_retired(repo):
 
 
 @needs_db
+def test_reimport_when_an_id_moves_to_a_new_record(repo):
+    # MITRE sometimes replaces an object: same ATT&CK ID (C0035), new internal STIX id
+    moved = copy.deepcopy(BUNDLE)
+    for obj in moved["objects"]:
+        if obj.get("id") == "campaign--kv":
+            obj["id"] = "campaign--kv-new"
+        for key in ("source_ref", "target_ref"):
+            if obj.get(key) == "campaign--kv":
+                obj[key] = "campaign--kv-new"
+    version, entities, relationships, redirects = parse_bundle(moved)
+    result = repo.import_source(SOURCE, version, entities, relationships, redirects)
+    assert result["removed_entities"] == 1
+    view = asyncio.run(repo.view("C0035"))
+    assert view.entity.id == "campaign--kv-new" and view.related  # its relationships came along
+
+
+@needs_db
 def test_stats(repo):
     stats = asyncio.run(repo.stats(SOURCE))
     assert stats.version == "19.2" and stats.entities["technique"] == 2 and stats.relationships == 7

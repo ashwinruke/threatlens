@@ -160,7 +160,8 @@ function WeaknessDetails({ details }) {
 }
 
 // Below the summary: defenses, techniques, and everything connected to this threat.
-export function ProfileDetails({ profile }) {
+// The techniques themselves are shown by the ATT&CK map, so this page can leave them out (showTechniques=false)
+export function ProfileDetails({ profile, showTechniques = true }) {
   const { techniques, tactics, mitigations, related } = profile;
   const weakness = profile.entity.kind === "weakness";
   const byTactic = new Map(tactics.map((t) => [t.name, []]));
@@ -201,7 +202,7 @@ export function ProfileDetails({ profile }) {
         </section>
       )}
 
-      {techniques.length > 0 && (
+      {showTechniques && techniques.length > 0 && (
         <section className="profile__section" aria-labelledby="techniques-title">
           <h2 id="techniques-title">Techniques, by tactic</h2>
           <div className="tactic-list">

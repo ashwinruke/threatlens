@@ -5,6 +5,7 @@ Run locally with:  uvicorn app.main:app --reload
 import asyncio
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -16,6 +17,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.config import get_settings
 from app.db import check_database
 from app.detection import DetectionError, detect
+from app.attack_map import AttackMap, build_attack_map, navigator_layer
 from app.graph import InvestigationGraph, build_graph
 from app.investigate import investigate
 from app.knowledge.api import router as knowledge_router
@@ -238,3 +240,28 @@ async def get_investigation_graph(investigation_id: str, request: Request):
     if not found:
         raise HTTPException(status_code=404, detail="Investigation not found.")
     return await build_graph(found, store)
+
+
+@app.get("/api/investigations/{investigation_id}/attack", response_model=AttackMap)
+async def get_attack_map(investigation_id: str, request: Request):
+    """The ATT&CK techniques this investigation touches, by stage of attack."""
+    store = request.app.state.store
+    found = await store.get(investigation_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="Investigation not found.")
+    return await build_attack_map(found, store)
+
+
+@app.get("/api/investigations/{investigation_id}/attack/layer")
+async def get_navigator_layer(investigation_id: str, request: Request):
+    """The same map as an ATT&CK Navigator layer file, to open in MITRE's Navigator."""
+    store = request.app.state.store
+    found = await store.get(investigation_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="Investigation not found.")
+    attack_map = await build_attack_map(found, store)
+    if attack_map.status != "ok":
+        raise HTTPException(status_code=404, detail="There are no ATT&CK techniques to export for this investigation.")
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", found.indicator.value)[:60] or "investigation"
+    return JSONResponse(navigator_layer(attack_map, found.indicator.value),
+                        headers={"Content-Disposition": f'attachment; filename="threatlens-{safe}-attack-layer.json"'})
