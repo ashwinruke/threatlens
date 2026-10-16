@@ -13,6 +13,10 @@ from app.known_good import KnownGoodResult
 from app.models import Indicator, IndicatorType, Signal, SourceResult, SourceStatus, Verdict
 
 ANSWERED = {SourceStatus.OK, SourceStatus.NOT_FOUND}
+# Signals that mean "a source reports this as malicious". Two or more sources agreeing adds a bonus.
+THREAT_SIGNALS = {"vt_malicious", "abuseipdb", "threatfox", "urlhaus_online", "urlhaus_past", "malwarebazaar", "otx"}
+# Signals ThreatLens works out by combining what the threat signals say (agreement, freshness)
+COMBINED_SIGNALS = {"corroborated", "recent_activity", "stale_evidence"}
 
 
 def level_for(score: int) -> str:
@@ -210,8 +214,7 @@ def score_ioc(indicator: Indicator, results: list[SourceResult], known_good: Kno
                                   evidence=f"Registered {created.date()}. Attackers often use brand-new domains."))
 
     # Correlation: independent sources agreeing is stronger than one alone
-    threat_ids = {"vt_malicious", "abuseipdb", "threatfox", "urlhaus_online", "urlhaus_past", "malwarebazaar", "otx"}
-    agreeing = sorted({s.source for s in signals if s.id in threat_ids})
+    agreeing = sorted({s.source for s in signals if s.id in THREAT_SIGNALS})
     if len(agreeing) >= 2:
         signals.append(Signal(id="corroborated", label=f"{len(agreeing)} independent sources agree", points=10, source="ThreatLens",
                               evidence="Reported by " + ", ".join(agreeing) + "."))

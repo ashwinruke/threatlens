@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.config import get_settings
 from app.db import check_database
 from app.detection import DetectionError, detect
+from app.graph import InvestigationGraph, build_graph
 from app.investigate import investigate
 from app.knowledge.api import router as knowledge_router
 from app.limits import VisitorLimiter, visitor_key
@@ -227,3 +228,13 @@ async def get_investigation(investigation_id: str, request: Request):
     if not found:
         raise HTTPException(status_code=404, detail="Investigation not found.")
     return found
+
+
+@app.get("/api/investigations/{investigation_id}/graph", response_model=InvestigationGraph)
+async def get_investigation_graph(investigation_id: str, request: Request):
+    """The decision map (why this verdict) and the connections graph for a saved investigation."""
+    store = request.app.state.store
+    found = await store.get(investigation_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="Investigation not found.")
+    return await build_graph(found, store)

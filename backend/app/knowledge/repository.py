@@ -154,6 +154,18 @@ class KnowledgeRepository:
         return EntityView(entity=_entity(row), related=_group(links), redirected_from=redirected_from)
 
 
+    async def summaries(self, external_ids: list[str]) -> dict[str, EntitySummary]:
+        """Name, kind and link for a list of IDs, keyed by upper-case ID. Unknown IDs are left out."""
+        if not external_ids:
+            return {}
+
+        def run():
+            with self.store.connection() as conn:
+                return conn.execute(
+                    "SELECT external_id, name, kind, url FROM entities WHERE upper(external_id) = ANY(%s)",
+                    ([i.upper() for i in external_ids],)).fetchall()
+        return {row["external_id"].upper(): EntitySummary(**row) for row in await asyncio.to_thread(run)}
+
     async def names(self, external_ids: list[str]) -> dict[str, str]:
         """Names for a list of IDs, e.g. {"CWE-502": "Deserialization of Untrusted Data"}. Unknown IDs are left out."""
         if not external_ids:

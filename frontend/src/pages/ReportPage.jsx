@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import AiSummary from "../components/AiSummary";
+import EvidenceGraph from "../components/EvidenceGraph";
 import Research from "../components/Research";
 import Lens from "../components/Lens";
 import ScoreLedger from "../components/ScoreLedger";
@@ -138,6 +139,8 @@ export default function ReportPage({ id }) {
       )}
 
       {profile && <ProfileDetails profile={profile} />}
+
+      {!unmatched && <EvidenceGraph id={data.id} level={verdict.level} />}
 
       <Timeline steps={data.trace} />
     </main>

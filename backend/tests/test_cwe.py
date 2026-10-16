@@ -152,6 +152,8 @@ def test_cve_reports_name_their_weaknesses(store):
 
 @needs_db
 def test_cached_nvd_answer_keeps_plain_ids(store):
+    with store.connection() as conn:  # an answer cached by an earlier test run would be reused and not refreshed
+        conn.execute("DELETE FROM source_cache")
     go(fakes.LOG4SHELL, store)  # fills the source cache
     from datetime import timedelta
     from app.sources.nvd import NVDSource
