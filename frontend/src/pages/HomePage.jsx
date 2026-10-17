@@ -13,7 +13,10 @@ export function InvestigationRows({ items }) {
       {items.map((item) => (
         <li key={item.id}>
           <Link to={`/i/${item.id}`} className="row">
-            <span className={`level-text lvl-${item.level}`}>{item.level}</span>
+            <span className={`level-text lvl-${item.level}`}>
+              {item.level.charAt(0) + item.level.slice(1).toLowerCase()}
+              {item.level !== "PROFILE" && item.level !== "UNKNOWN" ? ` ${item.score}` : ""}
+            </span>
             <span className="row__value">{item.indicator_value}</span>
             <span className="row__type">{TYPE_NAMES[item.indicator_type]}</span>
             <span className="row__when">{timeAgo(item.created_at)}</span>

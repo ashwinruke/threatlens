@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { Link, usePath } from "../lib/router";
 import Lens from "./Lens";
+import ThemeSwitch from "./ThemeSwitch";
 
 function ServerStatus() {
   const [state, setState] = useState("checking");
@@ -42,6 +43,7 @@ export default function Header() {
         <Link to="/history" aria-current={current("/history") ? "page" : undefined}>History</Link>
       </nav>
       <ServerStatus />
+      <ThemeSwitch />
     </header>
   );
 }
