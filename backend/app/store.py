@@ -28,6 +28,7 @@ class MemoryStore:
         self.counters: dict[tuple[str, str], int] = {}
         self.json_cache: dict[str, tuple[datetime, dict]] = {}
         self.pinned: dict[str, dict] = {}
+        self.batches: dict[str, dict] = {}
 
     async def init(self) -> None:
         return None
@@ -69,6 +70,15 @@ class MemoryStore:
 
     async def get(self, investigation_id: str) -> Investigation | None:
         return self.investigations.get(investigation_id)
+
+    async def save_batch(self, batch: dict) -> str:
+        batch_id = str(uuid.uuid4())
+        self.batches[batch_id] = batch
+        return batch_id
+
+    async def get_batch(self, batch_id: str) -> dict | None:
+        found = self.batches.get(batch_id)
+        return {**found, "id": batch_id} if found else None
 
     async def recent(self, limit: int) -> list[InvestigationSummary]:
         items = sorted(self.investigations.values(), key=lambda i: i.created_at, reverse=True)[:limit]
@@ -232,6 +242,27 @@ class PostgresStore:
         if not row:
             return None
         return Investigation.model_validate({**row["result"], "id": str(row["id"])})
+
+    async def save_batch(self, batch: dict) -> str:
+        """A bulk lookup's rows (each links to its saved investigation), so the results have their own link."""
+        def run() -> str:
+            with self._connect() as conn:
+                row = conn.execute("INSERT INTO bulk_batches (result, item_count) VALUES (%s, %s) RETURNING id",
+                                   (Jsonb(batch), len(batch.get("rows", [])))).fetchone()
+            return str(row["id"])
+        return await asyncio.to_thread(run)
+
+    async def get_batch(self, batch_id: str) -> dict | None:
+        try:
+            uuid.UUID(batch_id)
+        except ValueError:
+            return None
+
+        def run():
+            with self._connect() as conn:
+                return conn.execute("SELECT id, result FROM bulk_batches WHERE id = %s", (batch_id,)).fetchone()
+        row = await asyncio.to_thread(run)
+        return {**row["result"], "id": str(row["id"])} if row else None
 
     async def recent(self, limit: int) -> list[InvestigationSummary]:
         def run():

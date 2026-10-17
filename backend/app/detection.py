@@ -83,7 +83,7 @@ def detect(raw: str) -> Indicator:
         if any(_is_indicator(token) for token in text.split()):
             raise DetectionError(
                 "That looks like more than one thing. Enter a single CVE, IP, domain, hash, or threat name. "
-                "Bulk lookups are coming in a later version."
+                "To check several at once, use Bulk lookup."
             )
         return _threat_name(text, original)
 

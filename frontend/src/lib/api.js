@@ -11,7 +11,7 @@ export class ApiError extends Error {
 function messageFrom(data, status) {
   const detail = data?.detail;
   if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) return "Enter between 1 and 500 characters.";
+  if (Array.isArray(detail)) return "That input is empty or too long.";
   return `The server returned an error (HTTP ${status}).`;
 }
 
@@ -59,7 +59,9 @@ function parseBlock(block) {
   return data.length ? { event, data: JSON.parse(data.join("\n")) } : null;
 }
 
-async function streamInvestigation(query, { onStep, onStatus }) {
+// Reads a Server-Sent Events response, calling onEvent(event, data) for each message, until "done"
+// (whose data it returns) or "error" (which it throws). Returns null if the server can't stream.
+async function streamEvents(path, body, onEvent, droppedMessage) {
   const controller = new AbortController();
   let stall = setTimeout(() => controller.abort(), STREAM_STALL_MS);
   const keepWaiting = () => {
@@ -69,10 +71,10 @@ async function streamInvestigation(query, { onStep, onStatus }) {
 
   let response;
   try {
-    response = await fetch(`${API_URL}/api/investigations/stream`, {
+    response = await fetch(`${API_URL}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
   } catch {
@@ -103,20 +105,26 @@ async function streamInvestigation(query, { onStep, onStatus }) {
       for (const block of blocks) {
         const message = parseBlock(block);
         if (!message) continue;
-        if (message.event === "step") onStep?.(message.data);
-        else if (message.event === "status") onStatus?.(message.data.text);
-        else if (message.event === "done") return message.data;
-        else if (message.event === "error") throw new ApiError(message.data.detail, 500);
+        if (message.event === "done") return message.data;
+        if (message.event === "error") throw new ApiError(message.data.detail, 500);
+        onEvent(message.event, message.data);
       }
     }
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    throw new ApiError("The connection dropped. The investigation may still finish: check History in a minute.", 0);
+    throw new ApiError(droppedMessage, 0);
   } finally {
     clearTimeout(stall);
     reader.releaseLock?.();
   }
-  throw new ApiError("The connection dropped. The investigation may still finish: check History in a minute.", 0);
+  throw new ApiError(droppedMessage, 0);
+}
+
+function streamInvestigation(query, { onStep, onStatus }) {
+  return streamEvents("/api/investigations/stream", { query }, (event, data) => {
+    if (event === "step") onStep?.(data);
+    else if (event === "status") onStatus?.(data.text);
+  }, "The connection dropped. The investigation may still finish: check History in a minute.");
 }
 
 // Investigations already loaded in this browser tab, so opening a report right after
@@ -147,6 +155,17 @@ export const api = {
   },
   getAttackMap: (id) => request(`/api/investigations/${encodeURIComponent(id)}/attack`, { timeoutMs: 75_000 }),
   getGraph: (id) => request(`/api/investigations/${encodeURIComponent(id)}/graph`, { timeoutMs: 75_000 }),
+  // Bulk lookup: what would be investigated (no sources contacted), then the live run, then saved results
+  bulkParse: (text, signal) => request("/api/bulk/parse", { method: "POST", body: { text }, signal, timeoutMs: 30_000 }),
+  async bulkLive(text, { onPlan, onRow } = {}) {
+    const batch = await streamEvents("/api/bulk/stream", { text }, (event, data) => {
+      if (event === "plan") onPlan?.(data);
+      else if (event === "row") onRow?.(data);
+    }, "The connection dropped. The bulk lookup may still finish: its results appear in History.");
+    if (!batch) throw new ApiError("This server doesn't support bulk lookups yet.", 404);
+    return batch;
+  },
+  getBatch: (id) => request(`/api/bulk/${encodeURIComponent(id)}`, { timeoutMs: 75_000 }),
   examples: () => request("/api/examples", { timeoutMs: 75_000 }),
   listInvestigations: (limit = 20) => request(`/api/investigations?limit=${limit}`, { timeoutMs: 75_000 }),
 };

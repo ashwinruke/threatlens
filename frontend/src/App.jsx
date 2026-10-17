@@ -1,4 +1,5 @@
 import Header from "./components/Header";
+import BulkPage, { BatchPage } from "./pages/BulkPage";
 import HistoryPage from "./pages/HistoryPage";
 import HomePage from "./pages/HomePage";
 import ReportPage from "./pages/ReportPage";
@@ -20,8 +21,11 @@ export default function App() {
   const path = usePath();
   let page;
   const report = path.match(/^\/i\/([^/]+)\/?$/);
+  const batch = path.match(/^\/b\/([^/]+)\/?$/);
   if (path === "/") page = <HomePage />;
   else if (report) page = <ReportPage id={decodeURIComponent(report[1])} />;
+  else if (path === "/bulk") page = <BulkPage />;
+  else if (batch) page = <BatchPage id={decodeURIComponent(batch[1])} />;
   else if (path === "/history") page = <HistoryPage />;
   else if (path === "/status") page = <StatusPage />;
   else page = <NotFound />;

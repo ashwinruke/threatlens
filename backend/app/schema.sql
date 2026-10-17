@@ -47,6 +47,14 @@ CREATE TABLE IF NOT EXISTS daily_counters (
     PRIMARY KEY (day, name)
 );
 
+-- Bulk lookups: the table of results (each row links to its own saved investigation).
+CREATE TABLE IF NOT EXISTS bulk_batches (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    item_count      INTEGER NOT NULL,
+    result          JSONB NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Investigations pinned to the home page as ready-made examples.
 CREATE TABLE IF NOT EXISTS pinned_examples (
     slot             TEXT PRIMARY KEY,

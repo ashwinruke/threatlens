@@ -18,6 +18,7 @@ from app.config import get_settings
 from app.db import check_database
 from app.detection import DetectionError, detect
 from app.attack_map import AttackMap, build_attack_map, navigator_layer
+from app.bulk import Batch, BulkRequest, Plan, plan, run_bulk
 from app.graph import InvestigationGraph, build_graph
 from app.investigate import investigate
 from app.knowledge.api import router as knowledge_router
@@ -211,6 +212,83 @@ async def stream_investigation(body: InvestigateRequest, request: Request):
 
     return StreamingResponse(events(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ---------------------------------------------------------------- bulk lookup
+
+@app.post("/api/bulk/parse", response_model=Plan)
+def parse_bulk(body: BulkRequest, request: Request):
+    """What a bulk lookup would investigate, without contacting any source. For the live preview."""
+    decision = limiter.check("detect", visitor_key(request), settings.detects_per_minute_per_visitor, 60)
+    if not decision.allowed:
+        raise HTTPException(status_code=429, detail="Too many requests. Slow down for a moment.",
+                            headers={"Retry-After": str(decision.retry_after_seconds)})
+    return plan(body.text, settings.bulk_max_items)
+
+
+@app.post("/api/bulk/stream")
+async def stream_bulk(body: BulkRequest, request: Request):
+    """Investigate everything in the pasted text, sending each result the moment it's ready.
+
+    Events: `plan` (what will be investigated), `row` (one finished item, in the order they finish),
+    `done` (the saved batch, with its id for a shareable link), `error`. Like single investigations,
+    it keeps going if the browser disconnects, and the batch is saved at the end.
+    """
+    planned = plan(body.text, settings.bulk_max_items)
+    if not planned.items:
+        raise HTTPException(status_code=422, detail="No indicators found. Paste CVEs, IPs, domains, URLs, hashes "
+                                                    "or threat names, one per line or inside any text.")
+    store = request.app.state.store
+    decision = limiter.check("bulk", visitor_key(request), settings.bulk_batches_per_hour_per_visitor, 3600)
+    if not decision.allowed:
+        minutes = max(1, round(decision.retry_after_seconds / 60))
+        raise HTTPException(status_code=429, headers={"Retry-After": str(decision.retry_after_seconds)},
+                            detail=(f"You've used the {settings.bulk_batches_per_hour_per_visitor} bulk lookups allowed "
+                                    f"per hour on this public demo. Try again in about {minutes} minute"
+                                    f"{'s' if minutes != 1 else ''}."))
+    used_today = await store.count_today("investigations", add=0)
+    if used_today + len(planned.items) > settings.daily_investigation_cap:
+        raise HTTPException(status_code=429, detail=(
+            "This bulk lookup would go over the daily investigation limit for this free demo. "
+            "Try fewer indicators, or come back tomorrow."))
+    await store.count_today("investigations", add=len(planned.items))
+    queue: asyncio.Queue = asyncio.Queue()
+    queue.put_nowait(("plan", planned.model_dump(mode="json")))
+
+    async def run() -> None:
+        try:
+            batch = await run_bulk(planned, settings, store, request.app.state.http,
+                                   on_row=lambda row: queue.put_nowait(("row", row.model_dump(mode="json"))))
+            queue.put_nowait(("done", batch.model_dump(mode="json")))
+        except Exception:
+            logger.exception("Bulk lookup failed")
+            queue.put_nowait(("error", {"detail": "The bulk lookup failed unexpectedly. Please try again."}))
+
+    task = asyncio.create_task(run())
+    request.app.state.tasks.add(task)
+    task.add_done_callback(request.app.state.tasks.discard)
+
+    async def events():
+        while True:
+            try:
+                kind, data = await asyncio.wait_for(queue.get(), timeout=KEEPALIVE_SECONDS)
+            except asyncio.TimeoutError:
+                yield ": still working\n\n"
+                continue
+            yield _sse(kind, data)
+            if kind in ("done", "error"):
+                return
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/bulk/{batch_id}", response_model=Batch)
+async def get_bulk(batch_id: str, request: Request):
+    found = await request.app.state.store.get_batch(batch_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="Bulk lookup not found.")
+    return found
 
 
 @app.get("/api/examples", response_model=list[Example])

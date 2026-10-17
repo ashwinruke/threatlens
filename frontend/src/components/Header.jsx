@@ -25,7 +25,11 @@ function ServerStatus() {
 
 export default function Header() {
   const path = usePath();
-  const current = (to) => (to === "/" ? path === "/" || path.startsWith("/i/") : path.startsWith(to));
+  const current = (to) => {
+    if (to === "/") return path === "/" || path.startsWith("/i/");
+    if (to === "/bulk") return path.startsWith("/bulk") || path.startsWith("/b/");
+    return path.startsWith(to);
+  };
   return (
     <header className="topbar">
       <Link to="/" className="brand" aria-label="ThreatLens home">
@@ -34,6 +38,7 @@ export default function Header() {
       </Link>
       <nav className="topnav" aria-label="Main">
         <Link to="/" aria-current={current("/") ? "page" : undefined}>Investigate</Link>
+        <Link to="/bulk" aria-current={current("/bulk") ? "page" : undefined}>Bulk</Link>
         <Link to="/history" aria-current={current("/history") ? "page" : undefined}>History</Link>
       </nav>
       <ServerStatus />
