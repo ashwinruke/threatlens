@@ -660,6 +660,16 @@ a.cite:hover { background: var(--amber); color: var(--ink); }
   .bulk-progress span { transition: none; }
 }
 
+/* ---------- Downloads ---------- */
+.downloads { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: 10px; }
+.downloads__label { color: var(--muted); }
+.page-lead .downloads, .bulk-link .downloads { display: flex; margin: 8px 0 0; }
+.downloads__link {
+  padding: 2px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.82rem;
+  color: var(--text); text-decoration: none; white-space: nowrap;
+}
+.downloads__link:hover { border-color: var(--amber); }
+
 /* ---------- Small screens ---------- */
 @media (max-width: 860px) {
   .report-grid { grid-template-columns: 1fr; }

@@ -12,13 +12,14 @@ from datetime import datetime, timezone
 import httpx2
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from app.config import get_settings
 from app.db import check_database
 from app.detection import DetectionError, detect
 from app.attack_map import AttackMap, build_attack_map, navigator_layer
 from app.bulk import Batch, BulkRequest, Plan, plan, run_bulk
+from app.export import batch_csv, batch_stix, investigation_csv, investigation_stix
 from app.graph import InvestigationGraph, build_graph
 from app.investigate import investigate
 from app.knowledge.api import router as knowledge_router
@@ -289,6 +290,57 @@ async def get_bulk(batch_id: str, request: Request):
     if not found:
         raise HTTPException(status_code=404, detail="Bulk lookup not found.")
     return found
+
+
+# ---------------------------------------------------------------- exports
+
+STIX_MEDIA_TYPE = "application/stix+json;version=2.1"
+
+
+def _filename(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", text)[:60].strip("_") or "export"
+
+
+def _download(content: str | dict, filename: str, media_type: str) -> Response:
+    body = json.dumps(content, indent=2, ensure_ascii=False) if isinstance(content, dict) else content
+    return Response(body, media_type=media_type,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/api/investigations/{investigation_id}/export/{fmt}")
+async def export_investigation(investigation_id: str, fmt: str, request: Request):
+    """Download a report as STIX 2.1 (fmt=stix) or CSV (fmt=csv)."""
+    if fmt not in ("stix", "csv"):
+        raise HTTPException(status_code=404, detail="Exports are available as stix or csv.")
+    store = request.app.state.store
+    found = await store.get(investigation_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="Investigation not found.")
+    name = f"threatlens-{_filename(found.indicator.value)}"
+    if fmt == "stix":
+        return _download(await investigation_stix(found, store, settings), f"{name}.stix.json", STIX_MEDIA_TYPE)
+    return _download(await investigation_csv(found, store, settings), f"{name}.csv", "text/csv; charset=utf-8")
+
+
+@app.get("/api/bulk/{batch_id}/export/{fmt}")
+async def export_bulk(batch_id: str, fmt: str, request: Request):
+    """Download a whole bulk lookup as STIX 2.1 (one bundle) or CSV (one row per indicator)."""
+    if fmt not in ("stix", "csv"):
+        raise HTTPException(status_code=404, detail="Exports are available as stix or csv.")
+    store = request.app.state.store
+    batch = await store.get_batch(batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Bulk lookup not found.")
+    name = f"threatlens-bulk-{batch_id[:8]}"
+    if fmt == "csv":
+        return _download(batch_csv(batch, settings), f"{name}.csv", "text/csv; charset=utf-8")
+    investigations = []
+    for row in batch["rows"]:
+        if row.get("investigation_id"):
+            found = await store.get(row["investigation_id"])
+            if found:
+                investigations.append(found)
+    return _download(await batch_stix(batch, investigations, store, settings), f"{name}.stix.json", STIX_MEDIA_TYPE)
 
 
 @app.get("/api/examples", response_model=list[Example])

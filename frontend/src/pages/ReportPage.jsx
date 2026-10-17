@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import AiSummary from "../components/AiSummary";
 import AttackMap from "../components/AttackMap";
+import Downloads from "../components/Downloads";
 import EvidenceGraph from "../components/EvidenceGraph";
 import Research from "../components/Research";
 import Lens from "../components/Lens";
@@ -107,6 +108,7 @@ export default function ReportPage({ id }) {
           )}
           <p className="verdict__meta">
             Investigated {timeAgo(data.created_at)}, took {seconds(data.duration_ms)}. <CopyLink />
+            {!unmatched && data.id && <Downloads path={`investigations/${encodeURIComponent(data.id)}`} />}
           </p>
         </div>
       </section>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import Downloads from "../components/Downloads";
 import { api } from "../lib/api";
 import { typeName } from "../lib/format";
 import { Link } from "../lib/router";
@@ -227,7 +228,10 @@ export default function BulkPage() {
       {error && <p className="notice is-error">{error}</p>}
       {run && run.items.length > 0 && <BulkResults items={run.items} rows={run.rows} running={run.running} />}
       {run?.batchId && !run.running && (
-        <p className="muted bulk-link">These results now have their own link: copy it from the address bar to share them.</p>
+        <p className="muted bulk-link">
+          These results now have their own link: copy it from the address bar to share them.{" "}
+          <Downloads path={`bulk/${encodeURIComponent(run.batchId)}`} label="Download all" />
+        </p>
       )}
     </main>
   );
@@ -257,7 +261,8 @@ export function BatchPage({ id }) {
       <h1 className="page-title">Bulk lookup</h1>
       <p className="page-lead">
         {batch.rows.length} indicators checked {new Date(batch.created_at).toLocaleString()}, in {seconds(batch.duration_ms)}.{" "}
-        <Link to="/bulk">Start a new bulk lookup</Link>.
+        <Link to="/bulk">Start a new bulk lookup</Link>.{" "}
+        <Downloads path={`bulk/${encodeURIComponent(id)}`} label="Download all" />
       </p>
       <BulkResults items={items} rows={rows} running={false} />
     </main>

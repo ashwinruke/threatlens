@@ -11,11 +11,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "ThreatLens API"
-    app_version: str = "0.12.0"
+    app_version: str = "0.13.0"
     app_env: str = "development"
 
     database_url: str = ""
     cors_origins: str = "http://localhost:5173"
+    public_site_url: str = ""  # the website's address, for report links inside exports; empty = the first https CORS origin
 
     # Threat intelligence source keys
     nvd_api_key: str = ""
