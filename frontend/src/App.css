@@ -160,7 +160,9 @@ button:disabled { background: var(--hover); border-color: var(--border); color: 
 .server { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; color: var(--muted); text-decoration: none; }
 .server__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .server--online .server__dot { background: var(--clear); }
-.server--offline .server__dot { background: var(--alert); }
+.server--offline .server__dot, .server--blocked .server__dot { background: var(--alert); }
+.server--waking .server__dot, .server--checking .server__dot { background: var(--medium); animation: pulse 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .server--waking .server__dot, .server--checking .server__dot { animation: none; } }
 
 /* ---------- Pages ---------- */
 .page { max-width: 880px; margin: 0 auto; padding: 48px 24px 64px; }
@@ -393,7 +395,10 @@ a.cite:hover { background: var(--fg); border-color: var(--fg); color: var(--on-f
 .checks { list-style: none; margin: 20px 0; padding: 0; }
 .check { display: grid; grid-template-columns: 12px 1fr auto; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); }
 .check__dot { width: 11px; height: 11px; margin-top: 7px; border-radius: 50%; background: var(--line); }
-.check--checking .check__dot { background: var(--muted); }
+.check--checking .check__dot { background: var(--medium); animation: pulse 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .check--checking .check__dot { animation: none; } }
+.status-fix { margin: 0 0 20px; }
+.status-fix p + p { margin-top: 8px; }
 .check--ok .check__dot { background: var(--clear); }
 .check--down .check__dot { background: var(--alert); }
 .check__name { font-weight: 600; }

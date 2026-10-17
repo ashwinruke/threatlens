@@ -71,6 +71,7 @@ app.include_router(knowledge_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
+    allow_origin_regex=settings.cors_origin_regex or None,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )

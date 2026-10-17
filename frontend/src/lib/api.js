@@ -1,10 +1,14 @@
 // Every call to the ThreatLens backend goes through here.
 export const API_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
+// kind says what went wrong: "http" (the server answered with an error), "network" (no readable
+// answer at all), or "timeout" (no answer in time). The status checker uses it to tell a sleeping
+// server from one that answers but the browser blocks.
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, kind = "http") {
     super(message);
     this.status = status;
+    this.kind = kind;
   }
 }
 
@@ -33,9 +37,9 @@ async function request(path, { method = "GET", body, timeoutMs = 20_000, signal 
     if (error instanceof ApiError) throw error;
     if (error.name === "AbortError") {
       if (signal?.aborted) throw error;
-      throw new ApiError("The server took too long to answer. Try again in a moment.", 0);
+      throw new ApiError("The server took too long to answer. Try again in a moment.", 0, "timeout");
     }
-    throw new ApiError("Can't reach the ThreatLens server. Check your connection and try again.", 0);
+    throw new ApiError("Can't reach the ThreatLens server. Check your connection and try again.", 0, "network");
   } finally {
     clearTimeout(timer);
   }
@@ -79,7 +83,7 @@ async function streamEvents(path, body, onEvent, droppedMessage) {
     });
   } catch {
     clearTimeout(stall);
-    throw new ApiError("Can't reach the ThreatLens server. Check your connection and try again.", 0);
+    throw new ApiError("Can't reach the ThreatLens server. Check your connection and try again.", 0, "network");
   }
   if (response.status === 404 || response.status === 405 || !response.body) {
     clearTimeout(stall);
@@ -132,7 +136,7 @@ function streamInvestigation(query, { onStep, onStatus }) {
 const loaded = new Map();
 
 export const api = {
-  health: () => request("/health", { timeoutMs: 75_000 }),
+  health: (signal) => request("/health", { timeoutMs: 75_000, signal }),
   healthDb: () => request("/health/db", { timeoutMs: 75_000 }),
   detect: (query, signal) => request("/api/detect", { method: "POST", body: { query }, signal, timeoutMs: 75_000 }),
   async investigate(query) {

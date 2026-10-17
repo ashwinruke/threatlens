@@ -1,23 +1,21 @@
-import { useEffect, useState } from "react";
-import { api } from "../lib/api";
 import { Link, usePath } from "../lib/router";
+import { useServerStatus } from "../lib/serverStatus";
 import Lens from "./Lens";
 import ThemeSwitch from "./ThemeSwitch";
 
+const SERVER_TEXT = {
+  checking: ["Connecting", "Checking the ThreatLens server"],
+  waking: ["Waking up", "The free server sleeps when idle and takes up to a minute to start"],
+  online: ["Online", "The ThreatLens server is running"],
+  offline: ["Offline", "The ThreatLens server isn't answering. Retrying automatically"],
+  blocked: ["Offline", "The server answered, but the browser blocked the reply. See System status"],
+};
+
 function ServerStatus() {
-  const [state, setState] = useState("checking");
-  useEffect(() => {
-    let alive = true;
-    api.health()
-      .then(() => alive && setState("online"))
-      .catch(() => alive && setState("offline"));
-    return () => {
-      alive = false;
-    };
-  }, []);
-  const text = { checking: "Connecting", online: "Online", offline: "Offline" }[state];
+  const { state } = useServerStatus();
+  const [text, title] = SERVER_TEXT[state] || SERVER_TEXT.checking;
   return (
-    <Link to="/status" className={`server server--${state}`} title="System status">
+    <Link to="/status" className={`server server--${state}`} title={title} aria-live="polite">
       <span className="server__dot" aria-hidden="true" />
       {text}
     </Link>

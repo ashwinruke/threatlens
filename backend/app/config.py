@@ -11,11 +11,15 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "ThreatLens API"
-    app_version: str = "0.14.0"
+    app_version: str = "0.14.1"
     app_env: str = "development"
 
     database_url: str = ""
     cors_origins: str = "http://localhost:5173"
+    # Also allowed: every Vercel address of this project (each deployment and branch gets its own,
+    # like threatlens-git-main-<you>.vercel.app), and localhost on any port for development.
+    # The API has no logins or private data, so this only decides which websites may read its answers.
+    cors_origin_regex: str = r"^(https://threatlens(-[a-z0-9-]+)?\.vercel\.app|http://(localhost|127\.0\.0\.1)(:\d+)?)$"
     public_site_url: str = ""  # the website's address, for report links inside exports; empty = the first https CORS origin
 
     # Threat intelligence source keys
