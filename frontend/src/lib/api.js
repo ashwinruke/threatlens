@@ -12,6 +12,18 @@ export class ApiError extends Error {
   }
 }
 
+// Every time the server really answers (any request, not just the status check), the status
+// checker is told, so the header can never say "Offline" while searches are working.
+const answerListeners = new Set();
+export function onServerAnswer(listener) {
+  answerListeners.add(listener);
+  return () => answerListeners.delete(listener);
+}
+function serverAnswered(status) {
+  // 5xx can be the hosting's own error page while the server restarts, so it doesn't count
+  if (status < 500) answerListeners.forEach((listener) => listener());
+}
+
 function messageFrom(data, status) {
   const detail = data?.detail;
   if (typeof detail === "string") return detail;
@@ -30,6 +42,7 @@ async function request(path, { method = "GET", body, timeoutMs = 20_000, signal 
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
+    serverAnswered(response.status);
     const data = await response.json().catch(() => null);
     if (!response.ok) throw new ApiError(messageFrom(data, response.status), response.status);
     return data;
@@ -85,6 +98,7 @@ async function streamEvents(path, body, onEvent, droppedMessage) {
     clearTimeout(stall);
     throw new ApiError("Can't reach the ThreatLens server. Check your connection and try again.", 0, "network");
   }
+  serverAnswered(response.status);
   if (response.status === 404 || response.status === 405 || !response.body) {
     clearTimeout(stall);
     return null; // an older server without streaming: the caller falls back to a normal request
@@ -136,7 +150,7 @@ function streamInvestigation(query, { onStep, onStatus }) {
 const loaded = new Map();
 
 export const api = {
-  health: (signal) => request("/health", { timeoutMs: 75_000, signal }),
+  health: (signal) => request("/health", { timeoutMs: 30_000, signal }),
   healthDb: () => request("/health/db", { timeoutMs: 75_000 }),
   detect: (query, signal) => request("/api/detect", { method: "POST", body: { query }, signal, timeoutMs: 75_000 }),
   async investigate(query) {

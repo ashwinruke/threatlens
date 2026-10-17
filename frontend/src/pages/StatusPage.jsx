@@ -6,7 +6,7 @@ import { checkServer, useServerStatus } from "../lib/serverStatus";
 function apiText(server) {
   switch (server.state) {
     case "online":
-      return { text: `Running version ${server.version}`, tone: "ok" };
+      return { text: server.version ? `Running version ${server.version}` : "Running", tone: "ok" };
     case "waking":
       return { text: "Waking up. The free server sleeps when nobody uses it and takes up to a minute to start. Retrying every few seconds.", tone: "checking" };
     case "blocked":
@@ -85,6 +85,9 @@ export default function StatusPage() {
         </div>
       )}
 
+      {server.lastError && server.state !== "offline" && (
+        <p className="muted">Last status check said: {server.lastError}</p>
+      )}
       <p className="muted">API address <code>{API_URL}</code></p>
       <p className="muted">This website <code>{window.location.origin}</code></p>
       <button type="button" onClick={again} disabled={checking}>{checking ? "Checking" : "Check again"}</button>

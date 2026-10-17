@@ -9,7 +9,7 @@
 //   - tells "no answer at all" apart from "the server answered but the browser blocked the reply"
 //     (the website's address is missing from the server's CORS settings), so the fix is obvious
 import { useEffect, useState } from "react";
-import { API_URL, api } from "./api";
+import { API_URL, api, onServerAnswer } from "./api";
 
 const WAKE_WINDOW_MS = 120_000; // how long failures count as "still waking up"
 const BLOCKED_WINDOW_MS = 30_000; // a restarting server's error pages are also unreadable, briefly
@@ -17,9 +17,11 @@ const RETRY_WAKING_MS = 5_000;
 const RETRY_DOWN_MS = 30_000;
 const RECHECK_ONLINE_MS = 300_000;
 const SLOW_ANSWER_MS = 4_000; // a check taking longer than this means the server is starting up
+const TRUST_ANSWER_MS = 60_000; // a real answer this recent outweighs a failed status check
 
-let status = { state: "checking", version: null, detail: null, checkedAt: 0 };
+let status = { state: "checking", version: null, detail: null, lastError: null, checkedAt: 0 };
 let failingSince = null;
+let lastAnswerAt = 0;
 let inflight = null;
 let timer = null;
 let listening = false;
@@ -45,6 +47,18 @@ async function answersAtAll() {
   }
 }
 
+// Any real answer from the server (a search, the history list) proves it is up
+onServerAnswer(() => {
+  lastAnswerAt = Date.now();
+  failingSince = null;
+  if (status.state !== "online") {
+    update({ state: "online", detail: null, lastError: null, checkedAt: Date.now() });
+    schedule();
+  }
+});
+
+const answeredRecently = () => Date.now() - lastAnswerAt < TRUST_ANSWER_MS;
+
 function schedule() {
   clearTimeout(timer);
   const delay = status.state === "online" ? RECHECK_ONLINE_MS : status.state === "waking" ? RETRY_WAKING_MS : RETRY_DOWN_MS;
@@ -58,25 +72,31 @@ export function checkServer() {
   if (inflight) return inflight;
   // A slow answer is a sleeping server waking up, not a failure: say so while waiting
   const slow = setTimeout(() => {
-    if (status.state !== "online") update({ state: "waking", detail: "The server is starting up. This can take up to a minute." });
+    if (status.state !== "online" && !answeredRecently()) update({ state: "waking", detail: "The server is starting up. This can take up to a minute." });
   }, SLOW_ANSWER_MS);
 
   inflight = (async () => {
     try {
       const data = await api.health();
       failingSince = null;
-      update({ state: "online", version: data.version, detail: null, checkedAt: Date.now() });
+      update({ state: "online", version: data.version, detail: null, lastError: null, checkedAt: Date.now() });
     } catch (error) {
+      const lastError = error.message;
+      if (answeredRecently()) {
+        // The status check failed but real requests are working: stay online, note why
+        update({ state: "online", lastError, checkedAt: Date.now() });
+        return status;
+      }
       failingSince ??= Date.now();
       const failingFor = Date.now() - failingSince;
       const blocked = error.kind === "network" && (await answersAtAll());
       const stillWaking = failingFor < (blocked ? BLOCKED_WINDOW_MS : WAKE_WINDOW_MS);
       if (stillWaking) {
-        update({ state: "waking", detail: "The server is starting up. This can take up to a minute.", checkedAt: Date.now() });
+        update({ state: "waking", detail: "The server is starting up. This can take up to a minute.", lastError, checkedAt: Date.now() });
       } else if (blocked) {
-        update({ state: "blocked", detail: error.message, checkedAt: Date.now() });
+        update({ state: "blocked", detail: error.message, lastError, checkedAt: Date.now() });
       } else {
-        update({ state: "offline", detail: error.message, checkedAt: Date.now() });
+        update({ state: "offline", detail: error.message, lastError, checkedAt: Date.now() });
       }
     } finally {
       clearTimeout(slow);
