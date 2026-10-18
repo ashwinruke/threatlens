@@ -29,6 +29,7 @@ class MemoryStore:
         self.json_cache: dict[str, tuple[datetime, dict]] = {}
         self.pinned: dict[str, dict] = {}
         self.batches: dict[str, dict] = {}
+        self.visitors: set[str] = set()
 
     async def init(self) -> None:
         return None
@@ -88,6 +89,13 @@ class MemoryStore:
         key = (str(datetime.now(timezone.utc).date()), name)
         self.counters[key] = self.counters.get(key, 0) + add
         return self.counters[key]
+
+    async def note_visitor(self, id_hash: str) -> None:
+        self.visitors.add(id_hash)
+
+    async def site_numbers(self) -> dict:
+        return {"visitors": len(self.visitors), "investigations": len(self.investigations),
+                "bulk_lookups": len(self.batches), "knowledge_entries": 0}
 
     async def pin_example(self, slot: str, label: str, note: str, position: int, investigation_id: str) -> None:
         self.pinned[slot] = {"slot": slot, "label": label, "note": note, "position": position,
@@ -287,6 +295,24 @@ class PostgresStore:
                 ).fetchone()
         row = await asyncio.to_thread(run)
         return row["count"]
+
+    async def note_visitor(self, id_hash: str) -> None:
+        def run() -> None:
+            with self._connect() as conn:
+                conn.execute(
+                    "INSERT INTO site_visitors (id_hash) VALUES (%s) "
+                    "ON CONFLICT (id_hash) DO UPDATE SET last_seen = now()", (id_hash,))
+        await asyncio.to_thread(run)
+
+    async def site_numbers(self) -> dict:
+        def run():
+            with self._connect() as conn:
+                return conn.execute(
+                    "SELECT (SELECT count(*) FROM site_visitors) AS visitors, "
+                    "(SELECT count(*) FROM investigations) AS investigations, "
+                    "(SELECT count(*) FROM bulk_batches) AS bulk_lookups, "
+                    "(SELECT count(*) FROM entities) AS knowledge_entries").fetchone()
+        return dict(await asyncio.to_thread(run))
 
     async def pin_example(self, slot: str, label: str, note: str, position: int, investigation_id: str) -> None:
         def run() -> None:

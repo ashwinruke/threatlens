@@ -1,6 +1,7 @@
 import { Link, usePath } from "../lib/router";
 import { useServerStatus } from "../lib/serverStatus";
 import Lens from "./Lens";
+import SiteNumbers from "./SiteNumbers";
 import ThemeSwitch from "./ThemeSwitch";
 
 const SERVER_TEXT = {
@@ -40,6 +41,7 @@ export default function Header() {
         <Link to="/bulk" aria-current={current("/bulk") ? "page" : undefined}>Bulk</Link>
         <Link to="/history" aria-current={current("/history") ? "page" : undefined}>History</Link>
       </nav>
+      <SiteNumbers />
       <ServerStatus />
       <ThemeSwitch />
     </header>

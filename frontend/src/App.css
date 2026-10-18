@@ -157,6 +157,10 @@ button:disabled { background: var(--hover); border-color: var(--border); color: 
 .topnav a { color: var(--muted); text-decoration: none; padding: 4px 10px; border-radius: 6px; font-size: 0.93rem; }
 .topnav a:hover { color: var(--fg); }
 .topnav a[aria-current="page"] { color: var(--fg); background: var(--hover); }
+/* Visitors and investigations, small, next to the server status */
+.sitenums { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 0.84rem; color: var(--muted); white-space: nowrap; cursor: default; }
+.sitenums b { font-family: var(--font-data); font-weight: 500; color: var(--fg); font-variant-numeric: tabular-nums; }
+.sitenums__sep { opacity: 0.6; }
 .server { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; color: var(--muted); text-decoration: none; }
 .server__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .server--online .server__dot { background: var(--clear); }
@@ -777,7 +781,8 @@ a.cite:hover { background: var(--fg); border-color: var(--fg); color: var(--on-f
 }
 @media (max-width: 640px) {
   .topbar { gap: 16px; flex-wrap: wrap; }
-  .topnav { order: 3; flex-basis: 100%; }
+  .topnav { order: 3; flex: 1 1 auto; }
+  .sitenums { order: 4; font-size: 0.8rem; }
   .verdict__meta .downloads { display: flex; margin: 8px 0 0; }
   .page { padding-top: 24px; }
   .hero { grid-template-columns: 1fr; gap: 20px; }

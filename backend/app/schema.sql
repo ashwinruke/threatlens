@@ -47,6 +47,14 @@ CREATE TABLE IF NOT EXISTS daily_counters (
     PRIMARY KEY (day, name)
 );
 
+-- Visitors, for the numbers on the home page. Each browser makes up a random ID and keeps it;
+-- only a hash of that ID is stored. No IP address or anything else about the visitor.
+CREATE TABLE IF NOT EXISTS site_visitors (
+    id_hash         TEXT PRIMARY KEY,
+    first_seen      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Bulk lookups: the table of results (each row links to its own saved investigation).
 CREATE TABLE IF NOT EXISTS bulk_batches (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),

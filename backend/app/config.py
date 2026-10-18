@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "ThreatLens API"
-    app_version: str = "0.14.1"
+    app_version: str = "0.15.0"
     app_env: str = "development"
 
     database_url: str = ""
@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     bulk_max_items: int = 20  # indicators per bulk lookup
     bulk_concurrency: int = 3  # investigated at the same time, gentle on the sources' rate limits
     bulk_batches_per_hour_per_visitor: int = 3
+    # Home-page visitor count: how many new browser IDs one address may add per hour
+    visitor_ids_per_hour_per_address: int = 10
 
     # Investigation behaviour
     source_timeout_seconds: float = 15.0

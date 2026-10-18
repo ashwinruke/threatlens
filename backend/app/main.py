@@ -3,13 +3,16 @@
 Run locally with:  uvicorn app.main:app --reload
 """
 import asyncio
+import hashlib
 import json
 import logging
 import re
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import httpx2
+from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -342,6 +345,51 @@ async def export_bulk(batch_id: str, fmt: str, request: Request):
             if found:
                 investigations.append(found)
     return _download(await batch_stix(batch, investigations, store, settings), f"{name}.stix.json", STIX_MEDIA_TYPE)
+
+
+class SiteNumbers(BaseModel):
+    visitors: int
+    investigations: int
+    bulk_lookups: int
+    knowledge_entries: int
+
+
+class VisitorHello(BaseModel):
+    # A random ID the browser made up for itself (a UUID), nothing about the person
+    visitor: str = Field(pattern=r"^[0-9a-fA-F-]{36}$")
+
+
+_numbers = {"at": 0.0, "data": None}
+NUMBERS_FRESH_SECONDS = 60
+
+
+async def _site_numbers(store, fresh: bool = False) -> dict:
+    """The counts are cached for a minute, so a busy home page doesn't keep the database awake."""
+    if fresh or _numbers["data"] is None or time.monotonic() - _numbers["at"] > NUMBERS_FRESH_SECONDS:
+        _numbers["data"] = await store.site_numbers()
+        _numbers["at"] = time.monotonic()
+    return _numbers["data"]
+
+
+@app.get("/api/numbers", response_model=SiteNumbers)
+async def site_numbers(request: Request):
+    """Visitors and investigations so far, for the home page."""
+    return await _site_numbers(request.app.state.store)
+
+
+@app.post("/api/numbers/visitor", response_model=SiteNumbers)
+async def note_visitor(body: VisitorHello, request: Request):
+    """Count this browser as a visitor (once, however often it comes back), then return the numbers.
+
+    Only a hash of the browser's random ID is stored. A per-address limit stops someone
+    from inflating the count by sending made-up IDs.
+    """
+    store = request.app.state.store
+    if limiter.check("visitor", visitor_key(request), settings.visitor_ids_per_hour_per_address, 3600).allowed:
+        id_hash = hashlib.sha256(f"threatlens-visitor:{body.visitor.lower()}".encode()).hexdigest()
+        await store.note_visitor(id_hash)
+        return await _site_numbers(store, fresh=True)
+    return await _site_numbers(store)
 
 
 @app.get("/api/examples", response_model=list[Example])

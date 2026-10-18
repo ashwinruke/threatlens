@@ -185,5 +185,7 @@ export const api = {
   },
   getBatch: (id) => request(`/api/bulk/${encodeURIComponent(id)}`, { timeoutMs: 75_000 }),
   examples: () => request("/api/examples", { timeoutMs: 75_000 }),
+  numbers: () => request("/api/numbers", { timeoutMs: 75_000 }),
+  countVisitor: (visitor) => request("/api/numbers/visitor", { method: "POST", body: { visitor }, timeoutMs: 75_000 }),
   listInvestigations: (limit = 20) => request(`/api/investigations?limit=${limit}`, { timeoutMs: 75_000 }),
 };
