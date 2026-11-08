@@ -118,6 +118,7 @@ class Report(BaseModel):
     input_tokens: int | None = None
     output_tokens: int | None = None
     removed_claims: int = 0  # statements dropped because they had no valid source
+    removed_invented: int = 0  # statements removed for containing an ID, address, hash or version not in the evidence
     attempts: list[str] = Field(default_factory=list)  # what happened with each provider
     cached: bool = False
     message: str | None = None  # why it's unavailable

@@ -1,5 +1,6 @@
 import Header from "./components/Header";
 import BulkPage, { BatchPage } from "./pages/BulkPage";
+import EvaluationPage from "./pages/EvaluationPage";
 import HistoryPage from "./pages/HistoryPage";
 import HomePage from "./pages/HomePage";
 import ReportPage from "./pages/ReportPage";
@@ -28,6 +29,7 @@ export default function App() {
   else if (batch) page = <BatchPage id={decodeURIComponent(batch[1])} />;
   else if (path === "/history") page = <HistoryPage />;
   else if (path === "/status") page = <StatusPage />;
+  else if (path === "/evaluation") page = <EvaluationPage />;
   else page = <NotFound />;
 
   if (!report) document.title = "ThreatLens — See the threat before it sees you";
@@ -43,6 +45,7 @@ export default function App() {
         </p>
         <p className="footer__links">
           <a href="https://github.com/ashwinruke/threatlens" target="_blank" rel="noopener noreferrer">Source code on GitHub</a>
+          <Link to="/evaluation">AI evaluation</Link>
           <Link to="/status">System status</Link>
         </p>
       </footer>

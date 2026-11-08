@@ -5,7 +5,8 @@ Order of events:
   2. Reuse a saved report if the exact same evidence was explained recently
   3. Try Gemini, then Groq. Any failure moves on to the next provider
   4. Check the answer: valid JSON, correct shape, and every statement cites a real source.
-     Statements with no valid source are removed and counted.
+     Statements with no valid source are removed and counted. So are statements containing an ID,
+     IP address, hash or version that appears nowhere in the evidence (see grounding.py).
   5. If every provider fails, return an "unavailable" report. The investigation still works,
      because the score never depended on the AI.
 """
@@ -18,6 +19,7 @@ from datetime import timedelta
 import httpx2
 from pydantic import BaseModel, Field, ValidationError
 
+from app.ai.grounding import Evidence, remove_invented_sentences
 from app.ai.prompt import SYSTEM_PROMPT, build_evidence, packet_hash, user_message
 from app.ai.providers import ProviderError, providers_in_order
 from app.config import Settings
@@ -60,30 +62,40 @@ def _clean_text(text: str, limit: int = MAX_TEXT) -> str:
     return text[:limit].rstrip()
 
 
-def _check(draft: _Draft, valid_ids: set[str]) -> tuple[dict, int]:
-    """Keep only statements that cite at least one real source. Returns (clean parts, removed count)."""
-    removed = 0
+def _check(draft: _Draft, valid_ids: set[str], evidence: Evidence | None = None) -> tuple[dict, int, int]:
+    """Keep only statements that cite at least one real source and invent no IDs.
+
+    Returns (clean parts, removed for citing nothing real, removed for inventing a specific).
+    """
+    uncited = invented = 0
 
     def keep(items: list, limit: int) -> list:
-        nonlocal removed
+        nonlocal uncited, invented
         kept = []
         for item in items:
             sources = [s.strip().upper() for s in item.sources if s.strip().upper() in valid_ids]
             sources = list(dict.fromkeys(sources))
             if not sources or not item.text.strip():
-                removed += 1
+                uncited += 1
+                continue
+            if evidence and evidence.check(item.text, sources, numbers=False).strict_invention:
+                invented += 1
                 continue
             kept.append(item.model_copy(update={"text": _clean_text(item.text), "sources": sources}))
         return kept[:limit]
 
+    summary = _clean_text(draft.summary, limit=800)
+    if evidence:
+        summary, dropped = remove_invented_sentences(summary, evidence)
+        invented += dropped
     parts = {
-        "summary": _clean_text(draft.summary, limit=800),
+        "summary": summary,
         "findings": keep(draft.findings, MAX_ITEMS["findings"]),
         "affected": keep(draft.affected, MAX_ITEMS["affected"]),
         "actions": keep(draft.actions, MAX_ITEMS["actions"]),
         "gaps": [_clean_text(g) for g in draft.gaps if str(g).strip()][:MAX_ITEMS["gaps"]],
     }
-    return parts, removed
+    return parts, uncited, invented
 
 
 async def write_report(investigation: Investigation, settings: Settings, client: httpx2.AsyncClient,
@@ -124,7 +136,7 @@ async def write_report(investigation: Investigation, settings: Settings, client:
                 await asyncio.sleep(RETRY_DELAY_SECONDS)
                 completion = await provider.complete(SYSTEM_PROMPT, message, client)
             draft = _parse(completion.text)
-            parts, removed = _check(draft, valid_ids)
+            parts, removed, invented = _check(draft, valid_ids, Evidence(packet))
             if not parts["summary"]:
                 raise ValueError("the summary was empty")
         except ProviderError as exc:
@@ -145,7 +157,7 @@ async def write_report(investigation: Investigation, settings: Settings, client:
             status="ready", citations=citations, provider=provider.name, model=provider.model,
             duration_ms=round((time.perf_counter() - started) * 1000),
             input_tokens=completion.input_tokens, output_tokens=completion.output_tokens,
-            removed_claims=removed, attempts=attempts, **parts,
+            removed_claims=removed, removed_invented=invented, attempts=attempts, **parts,
         )
         try:
             await store.put_report(cache_key, report)

@@ -160,6 +160,9 @@ async def investigate(query: str, settings: Settings, store, client: httpx2.Asyn
             reason = "The AI explains the score; it didn't set it."
             if report.removed_claims:
                 reason += f" Removed {report.removed_claims} statement(s) that didn't cite a real source."
+            if report.removed_invented:
+                reason += (f" Removed {report.removed_invented} statement(s) naming an ID, address, hash or version "
+                           "that isn't in the evidence.")
             trace.add("report", title, reason=reason, duration_ms=None if report.cached else report.duration_ms,
                       detail={"attempts": report.attempts, "input_tokens": report.input_tokens,
                               "output_tokens": report.output_tokens})

@@ -82,6 +82,8 @@ export default function AiSummary({ report }) {
         AI can make mistakes, so every statement links to the source it's based on.
         {report.removed_claims > 0 &&
           ` ${report.removed_claims} statement${report.removed_claims === 1 ? " was" : "s were"} removed because ${report.removed_claims === 1 ? "it" : "they"} didn't cite a source.`}
+        {report.removed_invented > 0 &&
+          ` ${report.removed_invented} statement${report.removed_invented === 1 ? " was" : "s were"} removed because ${report.removed_invented === 1 ? "it" : "they"} named an ID, address, hash or version that isn't in the evidence.`}
       </p>
     </section>
   );

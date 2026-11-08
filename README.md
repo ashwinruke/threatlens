@@ -18,8 +18,8 @@ Every decision it makes is shown: as a step-by-step trail, as a map from evidenc
 > The backend runs on a free plan and sleeps when idle, so the first investigation after a quiet spell can take up to a minute. The example investigations on the home page open instantly.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/report-dark.png">
-  <img alt="A ThreatLens report for CVE-2021-44228: a CRITICAL 95/100 risk gauge, the cited AI summary, and the score breakdown" src="docs/report-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/report-dark.png">
+  <img alt="A ThreatLens report for CVE-2021-44228: a CRITICAL 95/100 risk gauge, the cited AI summary, and the score breakdown" src="docs/screenshots/report-light.png">
 </picture>
 
 ---
@@ -55,6 +55,7 @@ The harder problem is trust. An AI that says "this is critical" is only useful i
 | **ATT&CK map** | The attack techniques involved, stage by stage. It separates what was reported for this item from what linked threats are known to do. Exports to MITRE's ATT&CK Navigator |
 | **Bulk lookup** | Paste up to 20 indicators, or a whole alert written in sentences. ThreatLens picks out the indicators and fills a live results table |
 | **Export** | Any report or bulk lookup as **STIX 2.1** (the standard format for sharing threat intelligence) or CSV |
+| **AI evaluation** | A published benchmark of how faithful the AI reports are: facts found, invented facts, citation accuracy and prompt-injection resistance |
 | **Light and dark mode** | Follows your computer, or pick one |
 
 ---
@@ -133,6 +134,7 @@ After scoring, the agent gets the leads found in the evidence: malware families,
 ### Guardrails on the AI
 
 - **Evidence only:** the summary may only use the evidence it's given. Every statement must cite a source id (`S1`, `S2`, …). Statements citing nothing real are removed before display.
+- **Fact check:** every CVE, CWE or ATT&CK ID, IP address, file hash and version number in a statement is looked up in the evidence. Statements naming one that isn't there (usually recalled from the model's memory, like a "fixed in 2.17.1" no source mentioned) are removed, and the report says how many.
 - **No links from the AI:** any link the model writes is stripped. Links shown come only from ThreatLens's own source data.
 - **Source text is untrusted:** threat feeds can contain text written by attackers. It's passed in as quoted data with instructions never to follow it. Even if a model were manipulated, the score wouldn't move, because the formula never reads free text.
 - **Two providers:** Groq first, Gemini as automatic backup, with retries for brief outages. If both fail, the investigation still completes with its score and evidence.
@@ -140,6 +142,32 @@ After scoring, the agent gets the leads found in the evidence: malware families,
 ---
 
 ## Measured, not assumed
+
+### AI evaluation
+
+How faithful are the AI reports? A benchmark of 19 cases measures it: CVEs, IPs, domains, a URL, file hashes, threat and weakness profiles, and 4 prompt-injection attacks hidden in source data. Each case is the exact evidence the AI would receive, frozen from ThreatLens's real pipeline, so only the AI's answer varies. Every report is graded by rule (are its IDs and numbers in the source it cites? does it mention the facts it must? does it contradict the evidence?) and by an AI judge from a different provider. Results are also on the site's **Evaluation** page.
+
+<!-- eval:start -->
+Latest run: 2026-11-08, report writer **openai/gpt-oss-120b**, judge **gemini-3-flash-preview**, 19 cases × 1 run (19 reports, 195 statements).
+
+| Measure | Result |
+|---|---|
+| Valid report JSON | 100% |
+| Facts a correct report must mention, found | 94.7% |
+| Specifics (IDs, numbers, versions) found in the cited source | 100% |
+| Specifics invented (not in the evidence), as written by the model | 0% |
+| Specifics invented, as shown to users after the guardrails | 0% |
+| Real fact, wrong source cited | 0% |
+| Statements with no valid citation (removed) | 0% |
+| Reports that contradict the evidence | 0% |
+| Reports stating the same risk level as the verdict | 94.7% |
+| Prompt-injection attacks resisted | 100% of 4 |
+| Attacks the report warned about | 50% |
+<!-- eval:end -->
+
+Run it with `python -m scripts.run_eval` (details in [docs/PHASE3_EVALUATION_GUIDE.md](docs/PHASE3_EVALUATION_GUIDE.md)). Every raw answer is saved in `backend/evals/results/`.
+
+### Other measurements
 
 - **Knowledge search:** a 36-query evaluation set, run with `python -m scripts.eval_search`.
 
@@ -158,17 +186,18 @@ After scoring, the agent gets the leads found in the evidence: malware families,
 
 - **STIX validity:** every STIX export is checked in the tests by `stix2`, the official STIX 2.1 Python library from OASIS. It's also verified against real ATT&CK data: Volt Typhoon's export has 81 techniques, 6 tools and 2 campaigns, connected by 90 relationships.
 
-- **Tests:** 306 automated tests (pytest) cover:
+- **Tests:** 368 automated tests (pytest) cover:
   - input detection and every source, using recorded API responses (no real network calls)
   - scoring rules and the AI guardrails
   - agent budgets and safety rules
   - search ranking and the knowledge import
   - the graphs, the ATT&CK map, bulk lookup, exports and the streaming endpoints
+  - the AI evaluation's cases, fact check and grading
 
-  245 run anywhere; 61 more need a PostgreSQL test database.
+  307 run anywhere; 61 more need a PostgreSQL test database.
 
 - **Continuous integration:** GitHub Actions runs on every push and pull request (`.github/workflows/ci.yml`):
-  - all 306 tests on Python 3.14, against a fresh PostgreSQL with pgvector
+  - all 368 tests on Python 3.14, against a fresh PostgreSQL with pgvector
   - the frontend production build
   - the backend Docker image that Render deploys
 
@@ -271,6 +300,8 @@ Run these from `backend/`:
 | `python -m scripts.try_investigation <input>` | Runs a full investigation in the terminal, printing each step live |
 | `python -m scripts.check_keys` | Tests every API key with one small request |
 | `python -m scripts.import_attack` / `import_cwe` | Loads or updates the MITRE knowledge bases |
+| `python -m scripts.run_eval` | Runs the AI evaluation and publishes the results |
+| `python -m scripts.build_eval_cases` | Rebuilds the evaluation's frozen cases from the recordings |
 | `python -m scripts.eval_search` | Runs the search evaluation set |
 | `python -m scripts.measure_embeddings` | Measures embedding search: quality, memory, speed |
 | `python -m scripts.seed_examples` | Fills the home page's example investigations |
@@ -287,17 +318,18 @@ backend/
     detection.py       what kind of input is this (rules, no AI)
     scoring.py         the risk formula
     sources/           one module per intelligence source
-    ai/                prompt, providers (Groq, Gemini), cited report writer
+    ai/                prompt, providers (Groq, Gemini), cited report writer, fact check
     agent/             the research agent: leads, tools, decision loop
     knowledge/         ATT&CK and CWE import, search, profiles
     graph.py           decision map and connections graph
     attack_map.py      ATT&CK map and Navigator layer
     bulk.py            finding indicators in pasted text, batch runs
     export.py          STIX 2.1 and CSV
-  tests/               306 tests with recorded API responses
+  evals/               AI evaluation: recorded cases, frozen evidence, grading, judge, results
+  tests/               368 tests with recorded API responses
   scripts/             import, evaluation and helper scripts
 frontend/src/
-  pages/               home, report, bulk, history, status
+  pages/               home, report, bulk, history, evaluation, status
   components/          gauge, live view, graphs, ATT&CK map, research, theme switch
 docs/                  a build guide for every step of the project
 ```
@@ -307,7 +339,7 @@ docs/                  a build guide for every step of the project
 ## Known limitations
 
 - **The scoring weights are informed judgments, not tuned on labelled data.** The formula is published so it can be checked and argued with.
-- **AI citation accuracy isn't measured yet.** Statements without a source are removed, but a statement can still cite the wrong source. I've seen this happen, and it's the first thing a formal evaluation would measure.
+- **The AI evaluation is small.** 19 cases show where the AI goes wrong, but they're not a statistical guarantee. The fact check only sees IDs, numbers and versions; the AI judge covers meaning, and its verdicts are an estimate.
 - **Search by meaning is weak** (1 of 4 test queries), by design, as measured above.
 - **Free-tier limits:**
   - VirusTotal allows a few requests per minute, so busy periods show it as rate-limited.
@@ -317,7 +349,7 @@ docs/                  a build guide for every step of the project
 
 ## Future work
 
-- **Evaluation:** a benchmark of known answers to measure factual accuracy, citation accuracy and hallucination rate, plus prompt-injection tests.
+- **Evaluation:** more cases, including real investigations snapshotted from the live site, and evaluating the research agent's choices.
 - **Daily use:** watchlists for your own tech stack, scheduled re-checks and alerts, analyst verdicts.
 - **Sharing:** a public API for security tools, and draft detection rules generated from a report.
 
