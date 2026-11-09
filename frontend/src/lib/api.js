@@ -31,14 +31,14 @@ function messageFrom(data, status) {
   return `The server returned an error (HTTP ${status}).`;
 }
 
-async function request(path, { method = "GET", body, timeoutMs = 20_000, signal } = {}) {
+async function request(path, { method = "GET", body, timeoutMs = 20_000, signal, headers = {} } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   signal?.addEventListener("abort", () => controller.abort());
   try {
     const response = await fetch(`${API_URL}${path}`, {
       method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...headers },
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
@@ -188,4 +188,12 @@ export const api = {
   numbers: () => request("/api/numbers", { timeoutMs: 75_000 }),
   countVisitor: (visitor) => request("/api/numbers/visitor", { method: "POST", body: { visitor }, timeoutMs: 75_000 }),
   listInvestigations: (limit = 20) => request(`/api/investigations?limit=${limit}`, { timeoutMs: 75_000 }),
+
+  // Watchlists: every call after creating one sends its private key
+  products: (q, signal) => request(`/api/products?q=${encodeURIComponent(q)}`, { signal, timeoutMs: 75_000 }),
+  createWatchlist: (body) => request("/api/watchlists", { method: "POST", body, timeoutMs: 75_000 }),
+  watchlist: (id, key, path = "", options = {}) =>
+    request(`/api/watchlists/${encodeURIComponent(id)}${path}`, {
+      timeoutMs: 75_000, ...options, headers: { "X-Watchlist-Key": key },
+    }),
 };

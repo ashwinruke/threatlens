@@ -1,3 +1,4 @@
+import VerdictPanel from "../components/VerdictPanel";
 import { useEffect, useState } from "react";
 import AiSummary from "../components/AiSummary";
 import AttackMap from "../components/AttackMap";
@@ -129,6 +130,7 @@ export default function ReportPage({ id }) {
             <Research run={data.research} />
           </div>
           <aside className="report-grid__side">
+            {data.id && !data.id.startsWith("not-saved") && <VerdictPanel investigation={data} />}
             {profile ? (
               <ProfileSide lookup={threat} />
             ) : (

@@ -39,6 +39,7 @@ export default function Header() {
       <nav className="topnav" aria-label="Main">
         <Link to="/" aria-current={current("/") ? "page" : undefined}>Investigate</Link>
         <Link to="/bulk" aria-current={current("/bulk") ? "page" : undefined}>Bulk</Link>
+        <Link to="/watchlists" aria-current={current("/watchlists") ? "page" : undefined}>Watchlists</Link>
         <Link to="/history" aria-current={current("/history") ? "page" : undefined}>History</Link>
         <Link to="/evaluation" aria-current={current("/evaluation") ? "page" : undefined}>Evaluation</Link>
       </nav>

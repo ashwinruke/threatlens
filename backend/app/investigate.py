@@ -68,7 +68,7 @@ async def _lookup_with_cache(source: Source, indicator: Indicator, client: httpx
 async def investigate(query: str, settings: Settings, store, client: httpx2.AsyncClient,
                       write_ai_report: bool = True, ai_cache_only: bool = False,
                       ai_skipped_message: str | None = None, research_allowed: bool = True,
-                      on_event: EventCallback | None = None) -> Investigation:
+                      on_event: EventCallback | None = None, save: bool = True, listed: bool = True) -> Investigation:
     """Raises DetectionError (with a friendly message) if the input isn't understood.
 
     on_event, if given, hears every decision-trail step as soon as it's recorded, plus short
@@ -174,8 +174,10 @@ async def investigate(query: str, settings: Settings, store, client: httpx2.Asyn
 
     # 8. Save (with every step so far, including the report step)
     investigation.trace = list(trace.steps)
+    if not save:
+        return investigation
     try:
-        await store.save(investigation)
+        await store.save(investigation, listed=listed)
         trace.add("save", "Saved the investigation", detail={"id": investigation.id})
     except Exception as exc:
         trace.add("save", "Couldn't save the investigation", status="error", reason=type(exc).__name__)

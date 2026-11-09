@@ -1,0 +1,37 @@
+# The daily watchlist check. Render's free plan has no timers and sleeps when idle, so this
+# free scheduled job wakes the server and asks it to check every watchlist.
+#
+# Setup (once): on GitHub, Settings → Secrets and variables → Actions → New repository secret,
+# name WATCH_CRON_TOKEN, value = the same long random text as WATCH_CRON_TOKEN on Render.
+name: Daily watchlist check
+
+on:
+  schedule:
+    - cron: "17 1 * * *" # 01:17 UTC = 06:47 in India, every day
+  workflow_dispatch: # a "Run workflow" button on the Actions tab
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      API: https://threatlens-api-fyjy.onrender.com
+    steps:
+      - name: Wake the server (the free plan takes up to a minute)
+        run: curl --silent --show-error --retry 8 --retry-delay 15 --retry-all-errors --max-time 60 -o /dev/null "$API/health"
+
+      - name: Check every watchlist
+        env:
+          TOKEN: ${{ secrets.WATCH_CRON_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Add the WATCH_CRON_TOKEN secret (see the comment at the top of this file)."
+            exit 1
+          fi
+          curl --fail-with-body --silent --show-error --max-time 900 \
+               --retry 2 --retry-delay 30 --retry-all-errors \
+               -X POST -H "X-Cron-Token: $TOKEN" "$API/api/watch/run" | tee result.json
+          echo
+          python3 -c "import json; r = json.load(open('result.json')); print(r['text']); [print('::warning::' + e) for e in r['errors']]"

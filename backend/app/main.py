@@ -26,6 +26,7 @@ from app.export import batch_csv, batch_stix, investigation_csv, investigation_s
 from app.graph import InvestigationGraph, build_graph
 from app.investigate import investigate
 from app.knowledge.api import router as knowledge_router
+from app.watch.api import router as watch_router
 from app.limits import VisitorLimiter, visitor_key
 from app.models import Example, Indicator, InvestigateRequest, Investigation, InvestigationSummary
 from app.store import MemoryStore, PostgresStore
@@ -70,12 +71,13 @@ app = FastAPI(
 )
 
 app.include_router(knowledge_router)
+app.include_router(watch_router)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_origin_regex=settings.cors_origin_regex or None,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 

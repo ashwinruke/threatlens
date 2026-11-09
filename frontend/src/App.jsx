@@ -5,6 +5,8 @@ import HistoryPage from "./pages/HistoryPage";
 import HomePage from "./pages/HomePage";
 import ReportPage from "./pages/ReportPage";
 import StatusPage from "./pages/StatusPage";
+import WatchlistPage from "./pages/WatchlistPage";
+import WatchlistsPage from "./pages/WatchlistsPage";
 import { Link, usePath } from "./lib/router";
 
 function NotFound() {
@@ -23,6 +25,7 @@ export default function App() {
   let page;
   const report = path.match(/^\/i\/([^/]+)\/?$/);
   const batch = path.match(/^\/b\/([^/]+)\/?$/);
+  const watchlist = path.match(/^\/watchlists\/([^/]+)\/?$/);
   if (path === "/") page = <HomePage />;
   else if (report) page = <ReportPage id={decodeURIComponent(report[1])} />;
   else if (path === "/bulk") page = <BulkPage />;
@@ -30,9 +33,11 @@ export default function App() {
   else if (path === "/history") page = <HistoryPage />;
   else if (path === "/status") page = <StatusPage />;
   else if (path === "/evaluation") page = <EvaluationPage />;
+  else if (path === "/watchlists") page = <WatchlistsPage />;
+  else if (watchlist) page = <WatchlistPage key={watchlist[1]} id={decodeURIComponent(watchlist[1])} />;
   else page = <NotFound />;
 
-  if (!report) document.title = "ThreatLens — See the threat before it sees you";
+  if (!report && !watchlist) document.title = "ThreatLens — See the threat before it sees you";
 
   return (
     <>

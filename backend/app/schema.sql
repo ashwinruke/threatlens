@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS investigations (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Watchlist checks save their investigations unlisted: reachable by link, never shown in History
+ALTER TABLE investigations ADD COLUMN IF NOT EXISTS listed BOOLEAN NOT NULL DEFAULT true;
+
 CREATE INDEX IF NOT EXISTS investigations_created_idx ON investigations (created_at DESC);
 CREATE INDEX IF NOT EXISTS investigations_indicator_idx ON investigations (indicator_type, indicator_value);
 
@@ -145,3 +148,29 @@ ALTER TABLE entities ADD COLUMN IF NOT EXISTS search tsvector
     GENERATED ALWAYS AS (threatlens_entity_search(name, aliases, external_id, description)) STORED;
 CREATE INDEX IF NOT EXISTS entities_search_idx ON entities USING gin (search);
 CREATE INDEX IF NOT EXISTS entities_name_trgm_idx ON entities USING gin (lower(name) gin_trgm_ops);
+
+-- Watchlists (Phase 4). No accounts: a watchlist is opened with its private key, and only a
+-- hash of that key is stored. Notification targets (webhook URLs) are secrets too; they're
+-- only ever shown back masked.
+CREATE TABLE IF NOT EXISTS watchlists (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    key_hash        TEXT NOT NULL,
+    data            JSONB NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_checked_at TIMESTAMPTZ
+);
+
+-- One row per finding in a watchlist: a new or newly exploited CVE for a watched product,
+-- or a report an analyst saved with a verdict. (watchlist, indicator) is unique, so a CVE
+-- alerts once, and a "false alarm" or "not affected" verdict keeps it quiet for good.
+CREATE TABLE IF NOT EXISTS watch_alerts (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    watchlist_id    UUID NOT NULL REFERENCES watchlists(id) ON DELETE CASCADE,
+    indicator       TEXT NOT NULL,
+    data            JSONB NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'new',
+    found_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (watchlist_id, indicator)
+);
+
+CREATE INDEX IF NOT EXISTS watch_alerts_list_idx ON watch_alerts (watchlist_id, found_at DESC);

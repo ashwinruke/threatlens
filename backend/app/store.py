@@ -30,6 +30,7 @@ class MemoryStore:
         self.pinned: dict[str, dict] = {}
         self.batches: dict[str, dict] = {}
         self.visitors: set[str] = set()
+        self.unlisted: set[str] = set()  # watchlist checks: reachable by link, not in History
 
     async def init(self) -> None:
         return None
@@ -64,9 +65,11 @@ class MemoryStore:
     async def put_json(self, key: str, data: dict) -> None:
         self.json_cache[key] = (datetime.now(timezone.utc), data)
 
-    async def save(self, investigation: Investigation) -> str:
+    async def save(self, investigation: Investigation, listed: bool = True) -> str:
         investigation.id = str(uuid.uuid4())
         self.investigations[investigation.id] = investigation
+        if not listed:
+            self.unlisted.add(investigation.id)
         return investigation.id
 
     async def get(self, investigation_id: str) -> Investigation | None:
@@ -82,7 +85,8 @@ class MemoryStore:
         return {**found, "id": batch_id} if found else None
 
     async def recent(self, limit: int) -> list[InvestigationSummary]:
-        items = sorted(self.investigations.values(), key=lambda i: i.created_at, reverse=True)[:limit]
+        listed = [i for i in self.investigations.values() if i.id not in self.unlisted]
+        items = sorted(listed, key=lambda i: i.created_at, reverse=True)[:limit]
         return [_summary(i) for i in items]
 
     async def count_today(self, name: str, add: int = 1) -> int:
@@ -94,7 +98,7 @@ class MemoryStore:
         self.visitors.add(id_hash)
 
     async def site_numbers(self) -> dict:
-        return {"visitors": len(self.visitors), "investigations": len(self.investigations),
+        return {"visitors": len(self.visitors), "investigations": len(self.investigations) - len(self.unlisted),
                 "bulk_lookups": len(self.batches), "knowledge_entries": 0}
 
     async def pin_example(self, slot: str, label: str, note: str, position: int, investigation_id: str) -> None:
@@ -222,16 +226,16 @@ class PostgresStore:
                 )
         await asyncio.to_thread(run)
 
-    async def save(self, investigation: Investigation) -> str:
+    async def save(self, investigation: Investigation, listed: bool = True) -> str:
         def run() -> str:
             payload = investigation.model_dump(mode="json", exclude={"id"})
             with self._connect() as conn:
                 row = conn.execute(
                     "INSERT INTO investigations (query, indicator_type, indicator_value, score, level, confidence, "
-                    "result, duration_ms, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                    "result, duration_ms, created_at, listed) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
                     (investigation.query, investigation.indicator.type.value, investigation.indicator.value,
                      investigation.verdict.score, investigation.verdict.level, investigation.verdict.confidence,
-                     Jsonb(payload), investigation.duration_ms, investigation.created_at),
+                     Jsonb(payload), investigation.duration_ms, investigation.created_at, listed),
                 ).fetchone()
             return str(row["id"])
         investigation.id = await asyncio.to_thread(run)
@@ -277,7 +281,7 @@ class PostgresStore:
             with self._connect() as conn:
                 return conn.execute(
                     "SELECT id, query, indicator_type, indicator_value, score, level, created_at "
-                    "FROM investigations ORDER BY created_at DESC LIMIT %s", (limit,),
+                    "FROM investigations WHERE listed ORDER BY created_at DESC LIMIT %s", (limit,),
                 ).fetchall()
         rows = await asyncio.to_thread(run)
         return [InvestigationSummary(id=str(r["id"]), query=r["query"], indicator_type=r["indicator_type"],
@@ -309,7 +313,7 @@ class PostgresStore:
             with self._connect() as conn:
                 return conn.execute(
                     "SELECT (SELECT count(*) FROM site_visitors) AS visitors, "
-                    "(SELECT count(*) FROM investigations) AS investigations, "
+                    "(SELECT count(*) FROM investigations WHERE listed) AS investigations, "
                     "(SELECT count(*) FROM bulk_batches) AS bulk_lookups, "
                     "(SELECT count(*) FROM entities) AS knowledge_entries").fetchone()
         return dict(await asyncio.to_thread(run))

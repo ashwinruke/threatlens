@@ -112,7 +112,7 @@ async def build(database_url: str | None, load_sample: bool) -> list[dict]:
         store = PostgresStore(database_url)
         await store.init()
 
-        async def dont_save(investigation):  # building cases must not add to the site's history
+        async def dont_save(investigation, listed=True):  # building cases must not add to the site's history
             return investigation.id
         store.save = dont_save
         if load_sample:

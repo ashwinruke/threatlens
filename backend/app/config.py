@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "ThreatLens API"
-    app_version: str = "0.16.0"
+    app_version: str = "0.17.0"
     app_env: str = "development"
 
     database_url: str = ""
@@ -59,6 +59,16 @@ class Settings(BaseSettings):
     bulk_batches_per_hour_per_visitor: int = 3
     # Home-page visitor count: how many new browser IDs one address may add per hour
     visitor_ids_per_hour_per_address: int = 10
+
+    # Watchlists (Phase 4)
+    watch_cron_token: str = ""  # the daily check's password; empty = the scheduled check is switched off
+    watchlists_per_day_per_visitor: int = 5
+    watch_max_items: int = 25
+    watch_max_channels: int = 5
+    watch_manual_check_minutes: int = 10  # "Check now" at most this often per watchlist
+    watch_ai_reports_per_run: int = 10  # AI summaries per daily check, to protect the free AI quota
+    resend_api_key: str = ""  # email alerts (free at resend.com); empty = email is off
+    alert_email_from: str = "ThreatLens <onboarding@resend.dev>"
 
     # Investigation behaviour
     source_timeout_seconds: float = 15.0

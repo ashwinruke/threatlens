@@ -55,6 +55,8 @@ The harder problem is trust. An AI that says "this is critical" is only useful i
 | **ATT&CK map** | The attack techniques involved, stage by stage. It separates what was reported for this item from what linked threats are known to do. Exports to MITRE's ATT&CK Navigator |
 | **Bulk lookup** | Paste up to 20 indicators, or a whole alert written in sentences. ThreatLens picks out the indicators and fills a live results table |
 | **Export** | Any report or bulk lookup as **STIX 2.1** (the standard format for sharing threat intelligence) or CSV |
+| **Watchlists and alerts** | List the software you run (picked from NVD's product dictionary). Every morning ThreatLens finds new CVEs for it, and older ones CISA has just confirmed exploited, scores them, and alerts you on Discord, Slack, Microsoft Teams, phone push (ntfy) or email |
+| **Analyst verdicts** | Triage each alert, or any report, as confirmed threat, false alarm or not affected, with a note. Muted alerts stay quiet, and the watchlist shows how many of its alerts turned out real |
 | **AI evaluation** | A published benchmark of how faithful the AI reports are: facts found, invented facts, citation accuracy and prompt-injection resistance |
 | **Light and dark mode** | Follows your computer, or pick one |
 
@@ -186,18 +188,19 @@ Run it with `python -m scripts.run_eval` (details in [docs/PHASE3_EVALUATION_GUI
 
 - **STIX validity:** every STIX export is checked in the tests by `stix2`, the official STIX 2.1 Python library from OASIS. It's also verified against real ATT&CK data: Volt Typhoon's export has 81 techniques, 6 tools and 2 campaigns, connected by 90 relationships.
 
-- **Tests:** 368 automated tests (pytest) cover:
+- **Tests:** 405 automated tests (pytest) cover:
   - input detection and every source, using recorded API responses (no real network calls)
   - scoring rules and the AI guardrails
   - agent budgets and safety rules
   - search ranking and the knowledge import
   - the graphs, the ATT&CK map, bulk lookup, exports and the streaming endpoints
   - the AI evaluation's cases, fact check and grading
+  - watchlists: product search, the daily check, alert rules, notifications, verdicts
 
-  307 run anywhere; 61 more need a PostgreSQL test database.
+  343 run anywhere; 62 more need a PostgreSQL test database.
 
 - **Continuous integration:** GitHub Actions runs on every push and pull request (`.github/workflows/ci.yml`):
-  - all 368 tests on Python 3.14, against a fresh PostgreSQL with pgvector
+  - all 405 tests on Python 3.14, against a fresh PostgreSQL with pgvector
   - the frontend production build
   - the backend Docker image that Render deploys
 
@@ -211,8 +214,22 @@ Browser ─▶ React + Vite (Vercel) ─▶ FastAPI (Render, Docker) ─▶ Post
                                          │                        ├─ source and AI caches, usage counters
                                          │                        └─ knowledge graph: MITRE ATT&CK + CWE
                                          ├─▶ 9 intelligence sources (parallel, cached, timeouts)
-                                         └─▶ AI: Groq (gpt-oss-120b / 20b), Gemini as backup
+                                         ├─▶ AI: Groq (gpt-oss-120b / 20b), Gemini as backup
+                                         └─▶ alerts: Discord, Slack, Teams, ntfy, email
+GitHub Actions (daily schedule) ─▶ POST /api/watch/run ─▶ NVD new CVEs + CISA KEV additions per watched product
 ```
+
+### Watchlists
+
+A watchlist is a list of products, named as NVD names them (vendor and product from its CPE dictionary), so "nginx" means F5's nginx rather than every CVE that mentions the word. There are no accounts: each watchlist has a private key, shown once and kept in its private link. Only a hash of the key is stored.
+
+Every morning a scheduled GitHub Actions job wakes the server (Render's free plan has no timers) and checks every watchlist:
+
+1. **New CVEs:** NVD is asked once per product, however many watchlists share it. Two lookups each: CVEs NVD has tagged with the product, and new CVEs that name it before NVD gets round to tagging them (often days later). Name-only matches are labelled, so an analyst checks they apply.
+2. **Newly exploited:** CVEs CISA added to its Known Exploited Vulnerabilities catalog since the last check, for a watched product. These always alert, because an old CVE now being exploited usually matters more than a new one.
+3. **Scored** with the normal formula. A brand-new CVE has no exploitation evidence yet, so even a CVSS 9.8 scores only Medium; the alert threshold is therefore met by ThreatLens's risk **or** NVD's CVSS severity, and every alert says which.
+4. **One alert per CVE per watchlist.** "False alarm" or "not affected" keeps it quiet for good. The exception is escalation: a CVE you were already told about that CISA later confirms exploited alerts again, unless you muted it.
+5. Each alert links to a full report (saved unlisted, so a watchlist's products never show in the public History), with an AI summary while the run's AI budget lasts. Each watchlist gets one message per run.
 
 ### The knowledge graph
 
@@ -249,9 +266,12 @@ Search uses PostgreSQL itself: exact and alias matching, `pg_trgm` for typos, an
 - **Private addresses stay private.** Internal and reserved IPs are never sent to outside services, including when the research agent asks.
 - **No malware handling.** Hashes and metadata only, never samples.
 - **Safe exports.** CSV cells that start with `=`, `+`, `-` or `@` are neutralised, because text from outside feeds could otherwise run as a spreadsheet formula (CSV injection). STIX exports are marked TLP:WHITE.
+- **Alerts only go to known services.** A server that posts to any address a visitor types in can be turned against other systems (server-side request forgery). Alert addresses must be HTTPS webhooks on Discord, Slack, Microsoft Teams or ntfy; redirects are never followed; and webhook addresses are only ever shown back masked, because anyone holding one can post to that channel.
+- **Watchlist keys are hashed** and compared in constant time. A wrong key and a missing watchlist get the same answer, so neither can be probed.
 - **Usage limits** protect the free tiers:
   - 10 investigations per hour per visitor
   - 3 bulk lookups per hour per visitor
+  - 5 new watchlists per day per visitor, and "Check now" once every 10 minutes per watchlist
   - daily caps on investigations, AI summaries and research runs
 
   When a cap is reached, investigations still work; only new AI text pauses.
@@ -325,13 +345,15 @@ backend/
     attack_map.py      ATT&CK map and Navigator layer
     bulk.py            finding indicators in pasted text, batch runs
     export.py          STIX 2.1 and CSV
+    watch/             watchlists: products, daily check, alerts, notifications, verdicts
   evals/               AI evaluation: recorded cases, frozen evidence, grading, judge, results
-  tests/               368 tests with recorded API responses
+  tests/               405 tests with recorded API responses
   scripts/             import, evaluation and helper scripts
 frontend/src/
-  pages/               home, report, bulk, history, evaluation, status
+  pages/               home, report, bulk, watchlists, history, evaluation, status
   components/          gauge, live view, graphs, ATT&CK map, research, theme switch
 docs/                  a build guide for every step of the project
+.github/workflows/     CI on every push; the daily watchlist check
 ```
 
 ---
@@ -344,13 +366,13 @@ docs/                  a build guide for every step of the project
 - **Free-tier limits:**
   - VirusTotal allows a few requests per minute, so busy periods show it as rate-limited.
   - The backend sleeps when idle.
-- **No accounts.** Anyone with a report's link can see it.
+- **No accounts.** Anyone with a report's link can see it, and anyone with a watchlist's private link can manage it. A lost private link can't be recovered.
+- **Watchlists depend on NVD's product tags.** NVD often tags new CVEs with products days or weeks late; the name search covers the gap, with less certainty. GitHub pauses scheduled jobs in a repository with no activity for 60 days.
 - **Free tiers are non-commercial.** VirusTotal's free API and Vercel's Hobby plan are for non-commercial use, which suits a portfolio project.
 
 ## Future work
 
 - **Evaluation:** more cases, including real investigations snapshotted from the live site, and evaluating the research agent's choices.
-- **Daily use:** watchlists for your own tech stack, scheduled re-checks and alerts, analyst verdicts.
 - **Sharing:** a public API for security tools, and draft detection rules generated from a report.
 
 ---

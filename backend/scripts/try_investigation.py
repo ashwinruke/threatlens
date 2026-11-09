@@ -24,7 +24,7 @@ from app.store import MemoryStore, PostgresStore
 class ScratchStore(PostgresStore):
     """The real database for reading, without saving this test run to History."""
 
-    async def save(self, investigation) -> str:
+    async def save(self, investigation, listed: bool = True) -> str:
         investigation.id = f"not-saved-{uuid.uuid4()}"
         return investigation.id
 
