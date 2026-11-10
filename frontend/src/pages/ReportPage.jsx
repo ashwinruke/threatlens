@@ -1,3 +1,4 @@
+import DetectionRules from "../components/DetectionRules";
 import VerdictPanel from "../components/VerdictPanel";
 import { useEffect, useState } from "react";
 import AiSummary from "../components/AiSummary";
@@ -148,6 +149,10 @@ export default function ReportPage({ id }) {
       {!unmatched && <AttackMap id={data.id} showDefenses={!profile} />}
 
       {!unmatched && <EvidenceGraph id={data.id} level={verdict.level} />}
+
+      {!unmatched && data.id && !data.id.startsWith("not-saved") && (
+        <DetectionRules key={data.id} path={`investigations/${encodeURIComponent(data.id)}`} />
+      )}
 
       <Timeline steps={data.trace} />
     </main>

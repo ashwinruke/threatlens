@@ -189,6 +189,9 @@ export const api = {
   countVisitor: (visitor) => request("/api/numbers/visitor", { method: "POST", body: { visitor }, timeoutMs: 75_000 }),
   listInvestigations: (limit = 20) => request(`/api/investigations?limit=${limit}`, { timeoutMs: 75_000 }),
 
+  rules: (path) => request(`/api/${path}/rules`, { timeoutMs: 75_000 }),
+  createApiKey: (name) => request("/api/keys", { method: "POST", body: { name }, timeoutMs: 75_000 }),
+
   // Watchlists: every call after creating one sends its private key
   products: (q, signal) => request(`/api/products?q=${encodeURIComponent(q)}`, { signal, timeoutMs: 75_000 }),
   createWatchlist: (body) => request("/api/watchlists", { method: "POST", body, timeoutMs: 75_000 }),

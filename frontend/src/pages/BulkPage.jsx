@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import DetectionRules from "../components/DetectionRules";
 import Downloads from "../components/Downloads";
 import { api } from "../lib/api";
 import { typeName } from "../lib/format";
@@ -233,6 +234,9 @@ export default function BulkPage() {
           <Downloads path={`bulk/${encodeURIComponent(run.batchId)}`} label="Download all" />
         </p>
       )}
+      {run?.batchId && !run.running && (
+        <DetectionRules key={run.batchId} path={`bulk/${encodeURIComponent(run.batchId)}`} title="Detection rules for this lookup" />
+      )}
     </main>
   );
 }
@@ -265,6 +269,7 @@ export function BatchPage({ id }) {
         <Downloads path={`bulk/${encodeURIComponent(id)}`} label="Download all" />
       </p>
       <BulkResults items={items} rows={rows} running={false} />
+      <DetectionRules path={`bulk/${encodeURIComponent(id)}`} title="Detection rules for this lookup" />
     </main>
   );
 }

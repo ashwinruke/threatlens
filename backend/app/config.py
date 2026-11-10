@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "ThreatLens API"
-    app_version: str = "0.17.0"
+    app_version: str = "0.18.0"
     app_env: str = "development"
 
     database_url: str = ""
@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     bulk_batches_per_hour_per_visitor: int = 3
     # Home-page visitor count: how many new browser IDs one address may add per hour
     visitor_ids_per_hour_per_address: int = 10
+
+    # Public API (Phase 5)
+    api_daily_units: int = 200  # indicators per key per day
+    api_requests_per_minute: int = 30
+    api_keys_per_day_per_visitor: int = 3
 
     # Watchlists (Phase 4)
     watch_cron_token: str = ""  # the daily check's password; empty = the scheduled check is switched off

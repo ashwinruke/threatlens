@@ -1,3 +1,4 @@
 -r requirements.txt
 pytest==8.4.2
 stix2==3.0.2  # tests check every STIX export with the official STIX 2.1 library
+yara-python==4.5.4  # tests compile every YARA rule

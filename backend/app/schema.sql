@@ -174,3 +174,14 @@ CREATE TABLE IF NOT EXISTS watch_alerts (
 );
 
 CREATE INDEX IF NOT EXISTS watch_alerts_list_idx ON watch_alerts (watchlist_id, found_at DESC);
+
+-- Public API keys (Phase 5). Only a hash of each key is stored; the prefix tells keys apart.
+CREATE TABLE IF NOT EXISTS api_keys (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    key_hash        TEXT NOT NULL UNIQUE,
+    prefix          TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_used_at    TIMESTAMPTZ,
+    revoked_at      TIMESTAMPTZ
+);

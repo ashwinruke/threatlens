@@ -22,10 +22,12 @@ from app.db import check_database
 from app.detection import DetectionError, detect
 from app.attack_map import AttackMap, build_attack_map, navigator_layer
 from app.bulk import Batch, BulkRequest, Plan, plan, run_bulk
-from app.export import batch_csv, batch_stix, investigation_csv, investigation_stix
+from app import rules
+from app.export import batch_csv, batch_stix, investigation_csv, investigation_stix, site_url
 from app.graph import InvestigationGraph, build_graph
 from app.investigate import investigate
 from app.knowledge.api import router as knowledge_router
+from app.public_api import keys_router, router as public_api_router
 from app.watch.api import router as watch_router
 from app.limits import VisitorLimiter, visitor_key
 from app.models import Example, Indicator, InvestigateRequest, Investigation, InvestigationSummary
@@ -72,6 +74,8 @@ app = FastAPI(
 
 app.include_router(knowledge_router)
 app.include_router(watch_router)
+app.include_router(keys_router)
+app.include_router(public_api_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -313,26 +317,82 @@ def _download(content: str | dict, filename: str, media_type: str) -> Response:
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
+EXPORT_FORMATS = ("stix", "csv", "sigma", "yara")
+
+
+async def detection_rules(investigations: list[Investigation], store, scope: str | None = None) -> rules.RuleSet:
+    """Sigma and YARA drafts for one report or a whole bulk lookup (see app/rules.py)."""
+    attack_maps = {}
+    for inv in investigations:
+        if inv.id:
+            try:
+                attack_maps[inv.id] = await build_attack_map(inv, store)
+            except Exception:  # tags and links are extras; the rules don't depend on them
+                pass
+    return await asyncio.to_thread(rules.build, investigations, site_url(settings), attack_maps, scope)
+
+
+def _rules_download(ruleset: rules.RuleSet, fmt: str, name: str) -> Response:
+    text = ruleset.sigma if fmt == "sigma" else ruleset.yara
+    if not text:
+        raise HTTPException(status_code=404, detail=" ".join(ruleset.notes) or "No rule for this report.")
+    if fmt == "sigma":
+        return _download(text, f"{name}.sigma.yml", "application/yaml; charset=utf-8")
+    return _download(text, f"{name}.yar", "text/plain; charset=utf-8")
+
+
+@app.get("/api/investigations/{investigation_id}/rules")
+async def investigation_rules(investigation_id: str, request: Request):
+    """Draft Sigma and YARA rules for a report, with the same rules as Splunk and Elastic searches."""
+    store = request.app.state.store
+    found = await store.get(investigation_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="Investigation not found.")
+    return (await detection_rules([found], store)).as_dict()
+
+
 @app.get("/api/investigations/{investigation_id}/export/{fmt}")
 async def export_investigation(investigation_id: str, fmt: str, request: Request):
-    """Download a report as STIX 2.1 (fmt=stix) or CSV (fmt=csv)."""
-    if fmt not in ("stix", "csv"):
-        raise HTTPException(status_code=404, detail="Exports are available as stix or csv.")
+    """Download a report as STIX 2.1, CSV, a Sigma rule or a YARA rule."""
+    if fmt not in EXPORT_FORMATS:
+        raise HTTPException(status_code=404, detail="Exports are available as stix, csv, sigma or yara.")
     store = request.app.state.store
     found = await store.get(investigation_id)
     if not found:
         raise HTTPException(status_code=404, detail="Investigation not found.")
     name = f"threatlens-{_filename(found.indicator.value)}"
+    if fmt in ("sigma", "yara"):
+        return _rules_download(await detection_rules([found], store), fmt, name)
     if fmt == "stix":
         return _download(await investigation_stix(found, store, settings), f"{name}.stix.json", STIX_MEDIA_TYPE)
     return _download(await investigation_csv(found, store, settings), f"{name}.csv", "text/csv; charset=utf-8")
 
 
+async def _batch_investigations(store, batch: dict) -> list[Investigation]:
+    found = []
+    for row in batch["rows"]:
+        if row.get("investigation_id"):
+            investigation = await store.get(row["investigation_id"])
+            if investigation:
+                found.append(investigation)
+    return found
+
+
+@app.get("/api/bulk/{batch_id}/rules")
+async def bulk_rules(batch_id: str, request: Request):
+    """Draft Sigma and YARA rules covering every indicator in a bulk lookup rated medium risk or above."""
+    store = request.app.state.store
+    batch = await store.get_batch(batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Bulk lookup not found.")
+    return (await detection_rules(await _batch_investigations(store, batch), store, scope=f"bulk:{batch_id}")).as_dict()
+
+
 @app.get("/api/bulk/{batch_id}/export/{fmt}")
 async def export_bulk(batch_id: str, fmt: str, request: Request):
-    """Download a whole bulk lookup as STIX 2.1 (one bundle) or CSV (one row per indicator)."""
-    if fmt not in ("stix", "csv"):
-        raise HTTPException(status_code=404, detail="Exports are available as stix or csv.")
+    """Download a whole bulk lookup as STIX 2.1 (one bundle), CSV (one row per indicator), or Sigma/YARA rules."""
+    if fmt not in EXPORT_FORMATS:
+        raise HTTPException(status_code=404, detail="Exports are available as stix, csv, sigma or yara.")
     store = request.app.state.store
     batch = await store.get_batch(batch_id)
     if not batch:
@@ -340,12 +400,9 @@ async def export_bulk(batch_id: str, fmt: str, request: Request):
     name = f"threatlens-bulk-{batch_id[:8]}"
     if fmt == "csv":
         return _download(batch_csv(batch, settings), f"{name}.csv", "text/csv; charset=utf-8")
-    investigations = []
-    for row in batch["rows"]:
-        if row.get("investigation_id"):
-            found = await store.get(row["investigation_id"])
-            if found:
-                investigations.append(found)
+    investigations = await _batch_investigations(store, batch)
+    if fmt in ("sigma", "yara"):
+        return _rules_download(await detection_rules(investigations, store, scope=f"bulk:{batch_id}"), fmt, name)
     return _download(await batch_stix(batch, investigations, store, settings), f"{name}.stix.json", STIX_MEDIA_TYPE)
 
 

@@ -984,3 +984,34 @@ select.field { cursor: pointer; }
   .watch-section__head .tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   .watch-section__head .tab { white-space: nowrap; padding: 4px 9px; }
 }
+
+/* ---------- Detection rules ---------- */
+.rules__bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; }
+.rules__actions { display: inline-flex; gap: 8px; align-items: center; }
+.rules__copy { padding: 5px 12px; font-size: 0.86rem; }
+.rules__about { font-size: 0.86rem; margin: 8px 0; }
+.rules__notes, .rules__links { margin: 0 0 8px; padding-left: 18px; font-size: 0.9rem; display: grid; gap: 4px; }
+.rules__code {
+  margin: 0; max-height: 420px; overflow: auto; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); font-family: var(--font-data); font-size: 0.82rem; line-height: 1.55; white-space: pre;
+}
+.rules__code:focus { outline: 2px solid var(--fg); outline-offset: 2px; }
+
+/* ---------- API page ---------- */
+.dev .eval__h2:first-of-type { margin-top: 36px; }
+.dev-key { display: grid; gap: 8px; }
+.dev-key .watch-label { margin-top: 0; }
+.dev-key__row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.dev-key__value { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); user-select: all; flex: 1 1 280px; }
+.dev-code { max-height: none; }
+.dev-list { margin-top: 4px; }
+.eval-table th code { white-space: nowrap; font-size: 0.82rem; }
+@media (max-width: 640px) { .eval-table th code { white-space: normal; } }
+@media (max-width: 640px) {
+  .footer__links { flex-wrap: wrap; gap: 8px 16px; white-space: normal; }
+}
+.rules__code, .eval-table-wrap { max-width: 100%; min-width: 0; }
+.page { min-width: 0; }
+.dev-table td:nth-child(2) { font-family: inherit; white-space: normal; font-variant-numeric: normal; }
+.dev-table td:nth-child(3) { font-family: var(--font-data); white-space: nowrap; }
+.dev-table th { min-width: 0; }

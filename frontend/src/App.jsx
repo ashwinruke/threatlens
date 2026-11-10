@@ -1,5 +1,6 @@
 import Header from "./components/Header";
 import BulkPage, { BatchPage } from "./pages/BulkPage";
+import DevelopersPage from "./pages/DevelopersPage";
 import EvaluationPage from "./pages/EvaluationPage";
 import HistoryPage from "./pages/HistoryPage";
 import HomePage from "./pages/HomePage";
@@ -33,6 +34,7 @@ export default function App() {
   else if (path === "/history") page = <HistoryPage />;
   else if (path === "/status") page = <StatusPage />;
   else if (path === "/evaluation") page = <EvaluationPage />;
+  else if (path === "/developers") page = <DevelopersPage />;
   else if (path === "/watchlists") page = <WatchlistsPage />;
   else if (watchlist) page = <WatchlistPage key={watchlist[1]} id={decodeURIComponent(watchlist[1])} />;
   else page = <NotFound />;
@@ -51,6 +53,7 @@ export default function App() {
         <p className="footer__links">
           <a href="https://github.com/ashwinruke/threatlens" target="_blank" rel="noopener noreferrer">Source code on GitHub</a>
           <Link to="/evaluation">AI evaluation</Link>
+          <Link to="/developers">API</Link>
           <Link to="/status">System status</Link>
         </p>
       </footer>

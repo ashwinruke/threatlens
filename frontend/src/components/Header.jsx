@@ -42,6 +42,7 @@ export default function Header() {
         <Link to="/watchlists" aria-current={current("/watchlists") ? "page" : undefined}>Watchlists</Link>
         <Link to="/history" aria-current={current("/history") ? "page" : undefined}>History</Link>
         <Link to="/evaluation" aria-current={current("/evaluation") ? "page" : undefined}>Evaluation</Link>
+        <Link to="/developers" aria-current={current("/developers") ? "page" : undefined}>API</Link>
       </nav>
       <SiteNumbers />
       <ServerStatus />

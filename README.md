@@ -55,6 +55,8 @@ The harder problem is trust. An AI that says "this is critical" is only useful i
 | **ATT&CK map** | The attack techniques involved, stage by stage. It separates what was reported for this item from what linked threats are known to do. Exports to MITRE's ATT&CK Navigator |
 | **Bulk lookup** | Paste up to 20 indicators, or a whole alert written in sentences. ThreatLens picks out the indicators and fills a live results table |
 | **Export** | Any report or bulk lookup as **STIX 2.1** (the standard format for sharing threat intelligence) or CSV |
+| **Detection rules** | Draft **Sigma** rules (network, firewall, DNS, proxy and process logs) and **YARA** rules for file hashes, each also converted to ready-to-run **Splunk** and **Elastic** searches. Built by fixed templates from the evidence, not by AI, and checked with the official Sigma and YARA libraries. For a CVE or a threat profile, links to the community's maintained rules instead |
+| **Public API** | Free API keys let other security tools send indicators automatically: single and batch lookups, reports, rules and STIX, as stable versioned JSON. Interactive docs included |
 | **Watchlists and alerts** | List the software you run (picked from NVD's product dictionary). Every morning ThreatLens finds new CVEs for it, and older ones CISA has just confirmed exploited, scores them, and alerts you on Discord, Slack, Microsoft Teams, phone push (ntfy) or email |
 | **Analyst verdicts** | Triage each alert, or any report, as confirmed threat, false alarm or not affected, with a note. Muted alerts stay quiet, and the watchlist shows how many of its alerts turned out real |
 | **AI evaluation** | A published benchmark of how faithful the AI reports are: facts found, invented facts, citation accuracy and prompt-injection resistance |
@@ -188,7 +190,7 @@ Run it with `python -m scripts.run_eval` (details in [docs/PHASE3_EVALUATION_GUI
 
 - **STIX validity:** every STIX export is checked in the tests by `stix2`, the official STIX 2.1 Python library from OASIS. It's also verified against real ATT&CK data: Volt Typhoon's export has 81 techniques, 6 tools and 2 campaigns, connected by 90 relationships.
 
-- **Tests:** 405 automated tests (pytest) cover:
+- **Tests:** 435 automated tests (pytest) cover:
   - input detection and every source, using recorded API responses (no real network calls)
   - scoring rules and the AI guardrails
   - agent budgets and safety rules
@@ -196,11 +198,12 @@ Run it with `python -m scripts.run_eval` (details in [docs/PHASE3_EVALUATION_GUI
   - the graphs, the ATT&CK map, bulk lookup, exports and the streaming endpoints
   - the AI evaluation's cases, fact check and grading
   - watchlists: product search, the daily check, alert rules, notifications, verdicts
+  - detection rules (every Sigma rule loaded by pySigma, every YARA rule compiled and matched) and the public API
 
-  343 run anywhere; 62 more need a PostgreSQL test database.
+  372 run anywhere; 63 more need a PostgreSQL test database.
 
 - **Continuous integration:** GitHub Actions runs on every push and pull request (`.github/workflows/ci.yml`):
-  - all 405 tests on Python 3.14, against a fresh PostgreSQL with pgvector
+  - all 435 tests on Python 3.14, against a fresh PostgreSQL with pgvector
   - the frontend production build
   - the backend Docker image that Render deploys
 
@@ -216,6 +219,7 @@ Browser ─▶ React + Vite (Vercel) ─▶ FastAPI (Render, Docker) ─▶ Post
                                          ├─▶ 9 intelligence sources (parallel, cached, timeouts)
                                          ├─▶ AI: Groq (gpt-oss-120b / 20b), Gemini as backup
                                          └─▶ alerts: Discord, Slack, Teams, ntfy, email
+Security tools ─▶ public API (/v1, API keys) ─▶ the same pipeline
 GitHub Actions (daily schedule) ─▶ POST /api/watch/run ─▶ NVD new CVEs + CISA KEV additions per watched product
 ```
 
@@ -246,6 +250,20 @@ Search uses PostgreSQL itself: exact and alias matching, `pg_trgm` for typos, an
 
 **Why no separate graph database:** the graph is small (about 2,800 nodes) and every query is one or two hops, so SQL joins are fast. Keeping one database also keeps hosting free and simple.
 
+### Public API
+
+`/v1` gives other security tools the same investigations as the website, as stable JSON: fields may be added within v1, but never renamed or removed. Free keys are made on the site's API page and shown once; only a hash is stored. Each key has a daily allowance (200 indicators) and a per-minute limit, and the API shares the website's daily ceilings, so automated use can't use up the free tiers. Lookups made through the API are saved unlisted. The full reference is at `/docs` on the backend.
+
+```bash
+curl -X POST https://threatlens-api-fyjy.onrender.com/v1/lookup \
+     -H "Authorization: Bearer tl_..." -H "Content-Type: application/json" \
+     -d '{"indicator": "CVE-2021-44228"}'
+```
+
+### Detection rules
+
+Rules are generated by fixed templates, never by AI, so a rule can only contain the indicator that was investigated. Each one is loaded by the official pySigma library (which also converts it to Splunk and Elastic searches) and tested: every YARA rule is compiled and must match its exact file and nothing else. Only indicators rated medium risk or above get a rule, because a rule for something probably harmless mostly raises false alarms. A CVE or a threat profile isn't something a log contains, so those link to the community's maintained SigmaHQ rules for that CVE or those ATT&CK techniques instead.
+
 ### Tech stack
 
 | Area | Technology |
@@ -254,9 +272,9 @@ Search uses PostgreSQL itself: exact and alias matching, `pg_trgm` for typos, an
 | Frontend | React 19, Vite, plain CSS (no UI or chart libraries; graphs are hand-built SVG) |
 | Database | PostgreSQL on Neon, with `pg_trgm` and full-text search |
 | AI | Groq (`openai/gpt-oss-120b` for reports, `gpt-oss-20b` for the agent), Google Gemini as backup |
-| Standards | MITRE ATT&CK, MITRE CWE, STIX 2.1, ATT&CK Navigator layers, TLP |
+| Standards | MITRE ATT&CK, MITRE CWE, STIX 2.1, ATT&CK Navigator layers, TLP, Sigma, YARA |
 | Hosting | Render (Docker) and Vercel, free tiers only |
-| Testing | pytest, the official `stix2` library, GitHub Actions CI |
+| Testing | pytest, the official `stix2`, pySigma and YARA libraries, GitHub Actions CI |
 
 ---
 
@@ -267,11 +285,13 @@ Search uses PostgreSQL itself: exact and alias matching, `pg_trgm` for typos, an
 - **No malware handling.** Hashes and metadata only, never samples.
 - **Safe exports.** CSV cells that start with `=`, `+`, `-` or `@` are neutralised, because text from outside feeds could otherwise run as a spreadsheet formula (CSV injection). STIX exports are marked TLP:WHITE.
 - **Alerts only go to known services.** A server that posts to any address a visitor types in can be turned against other systems (server-side request forgery). Alert addresses must be HTTPS webhooks on Discord, Slack, Microsoft Teams or ntfy; redirects are never followed; and webhook addresses are only ever shown back masked, because anyone holding one can post to that channel.
+- **API keys are hashed too**, shown once, revocable by their owner, and limited per day and per minute.
 - **Watchlist keys are hashed** and compared in constant time. A wrong key and a missing watchlist get the same answer, so neither can be probed.
 - **Usage limits** protect the free tiers:
   - 10 investigations per hour per visitor
   - 3 bulk lookups per hour per visitor
   - 5 new watchlists per day per visitor, and "Check now" once every 10 minutes per watchlist
+  - 3 new API keys per day per visitor; 200 indicators per key per day, 30 requests a minute
   - daily caps on investigations, AI summaries and research runs
 
   When a cap is reached, investigations still work; only new AI text pauses.
@@ -345,12 +365,14 @@ backend/
     attack_map.py      ATT&CK map and Navigator layer
     bulk.py            finding indicators in pasted text, batch runs
     export.py          STIX 2.1 and CSV
+    rules.py           Sigma and YARA rules, with Splunk and Elastic searches
+    public_api.py      the public API (/v1) and API keys
     watch/             watchlists: products, daily check, alerts, notifications, verdicts
   evals/               AI evaluation: recorded cases, frozen evidence, grading, judge, results
-  tests/               405 tests with recorded API responses
+  tests/               435 tests with recorded API responses
   scripts/             import, evaluation and helper scripts
 frontend/src/
-  pages/               home, report, bulk, watchlists, history, evaluation, status
+  pages/               home, report, bulk, watchlists, history, evaluation, API, status
   components/          gauge, live view, graphs, ATT&CK map, research, theme switch
 docs/                  a build guide for every step of the project
 .github/workflows/     CI on every push; the daily watchlist check
@@ -373,7 +395,8 @@ docs/                  a build guide for every step of the project
 ## Future work
 
 - **Evaluation:** more cases, including real investigations snapshotted from the live site, and evaluating the research agent's choices.
-- **Sharing:** a public API for security tools, and draft detection rules generated from a report.
+- **Detection rules:** field-mapping pipelines for specific SIEMs (Microsoft Sentinel, Splunk CIM), and behaviour rules drafted from a threat profile's techniques.
+- **Integrations:** a ready-made connector for an open-source platform such as OpenCTI or MISP, built on the public API.
 
 ---
 
